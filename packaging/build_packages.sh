@@ -43,7 +43,8 @@ PERMANENT INSTALL (User-level, no sudo required):
     ./install.sh
 
 UNINSTALL:
-    ./uninstall.sh
+  ./uninstall.sh         (removes app, preserves database)
+  ./uninstall.sh --purge (removes app and wipes all financial databases)
 README_EOF
 
 tar -czf "$DIST/lyncost-${VERSION}-linux-x86_64.tar.gz" -C "$PKG_DIR/tarball_staging" "lyncost-$VERSION"

@@ -31,10 +31,15 @@ Lyncost does **not** use fragmented package formats (`.deb`, `.rpm`, `.pkg.tar.z
 curl -fsSL https://raw.githubusercontent.com/leodarshantech/lyncost/main/install.sh | bash
 ```
 
-### Clean Uninstall Command
-```bash
-curl -fsSL https://raw.githubusercontent.com/leodarshantech/lyncost/main/uninstall.sh | bash
-```
+### Clean Uninstall Commands
+* **Preserve Financial Data:**
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/leodarshantech/lyncost/main/uninstall.sh | bash
+  ```
+* **Complete Uninstall & Permanent Data Wipe (Purge):**
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/leodarshantech/lyncost/main/uninstall.sh | bash -s -- --purge
+  ```
 
 ### Installation File Locations
 * **Executable:** `~/.local/bin/lyncost`

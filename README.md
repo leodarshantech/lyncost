@@ -66,16 +66,21 @@ Download the native Android APK directly to test the offline mobile companion:
   2. Tap the downloaded APK and select **Install**.
   3. If prompted by Android, tap *"Allow from this source"* to complete installation.
 
-### One-Line Clean Uninstall
+### 🗑️ One-Line Uninstallation
 
-To completely remove Lyncost at any time:
+#### Option 1: Clean App Uninstall (Preserves your Data & Backups)
+Removes the application binary, desktop shortcut, and system icons, but keeps your financial database safely stored at `~/.local/share/com.lyncost.desktop/`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/leodarshantech/lyncost/main/uninstall.sh | bash
 ```
 
-- Removes the binary, desktop entry, and icon assets.
-- Asks whether you wish to keep or wipe your local database vault.
+#### Option 2: Complete Uninstall + Full Data Wipe (Factory Reset)
+Removes the application **AND** permanently wipes all local SQLite financial databases, accounts, transaction history, and backups:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leodarshantech/lyncost/main/uninstall.sh | bash -s -- --purge
+```
 
 ---
 
