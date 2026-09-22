@@ -8,7 +8,7 @@
 * **Application Name:** Lyncost
 * **Repository:** [`leodarshantech/lyncost`](https://github.com/leodarshantech/lyncost)
 * **Website:** [`lyncost.vercel.app`](https://lyncost.vercel.app) ([`leodarshantech/lyncost-website`](https://github.com/leodarshantech/lyncost-website))
-* **License:** GNU General Public License v3.0 (`GPL-3.0`)
+* **License:** Source-Available & Personal Use License (Proprietary / All Rights Reserved)
 * **Philosophy:** 100% Offline-First • Zero Telemetry • Double-Entry SQLite Ledger • Private Financial Vault
 * **Target Platform:** Native Linux Desktop (x86_64, Wayland & X11)
 

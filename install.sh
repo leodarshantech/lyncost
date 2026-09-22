@@ -51,7 +51,7 @@ cat << "BANNER"
 BANNER
 echo -e "${RESET}"
 echo -e " ${PURPLE}${BOLD}Personal Money & Investment Manager${RESET} ${DIM}• Native Linux Desktop (Offline & Private)${RESET}"
-echo -e " ${DIM}Created by ${WHITE}leodarshantech${RESET} ${DIM}• GPL-3.0 Open Source${RESET}"
+echo -e " ${DIM}Created by ${WHITE}leodarshantech${RESET} ${DIM}• Free for Personal Use (Source-Available)${RESET}"
 echo -e "${ROYAL}────────────────────────────────────────────────────────────────${RESET}"
 echo ""
 

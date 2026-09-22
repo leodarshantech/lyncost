@@ -2,7 +2,7 @@
 
 **Lyncost** is a lightweight, 100% offline personal finance and money management desktop application built with **Tauri**, **Rust**, **React**, and **SQLite**.
 
-This release introduces complete re-branding, GNU General Public License v3.0 (GPL-3.0), universal international currency formatting, streamlined Linux desktop packaging, and an updated companion Android app.
+This release introduces complete re-branding, universal international currency formatting, streamlined Linux desktop packaging, and an updated companion Android app.
 
 ---
 
@@ -63,5 +63,5 @@ tar -xzf lyncost-0.1.5-linux-x86_64.tar.gz
 ---
 
 ## 🛡️ License & Copyright
-Licensed under the **GNU General Public License v3.0 (GPL-3.0-or-later)**.
-Copyright © 2026 **leodarshantech**. Free & Open Source Software.
+Licensed under the **Lyncost Source-Available & Personal Use License**.
+Copyright © 2026 **leodarshantech**. All Rights Reserved. Free for personal non-commercial use on Linux.

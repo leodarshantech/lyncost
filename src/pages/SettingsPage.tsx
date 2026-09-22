@@ -532,14 +532,14 @@ export const SettingsPage: React.FC = () => {
               <h3 className={`text-sm font-black tracking-tight ${
                 theme === 'light' ? 'text-slate-950' : 'text-white'
               }`}>
-                Lyncost — 100% Free & Open Source
+                Lyncost — 100% Free & Private
               </h3>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                 theme === 'light'
                   ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                   : 'bg-emerald-900/60 text-emerald-200 border-emerald-600'
               }`}>
-                GPL-3.0 License
+                Source-Available
               </span>
             </div>
             <p className={`text-xs max-w-xl leading-relaxed font-bold ${

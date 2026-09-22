@@ -4,7 +4,8 @@
 
 **Fast, 100% Offline Personal Finance & Investment Tracker for Linux & Android**
 
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![License: Source-Available](https://img.shields.io/badge/License-Source--Available-blue.svg)](LICENSE)
+[![PRs: Not Accepted](https://img.shields.io/badge/PRs-not%20accepted-red.svg)](CONTRIBUTING.md)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)]()
 [![Android Beta](https://img.shields.io/badge/Android%20Beta-v0.2.1-3DDC84.svg?logo=android&logoColor=white)](dist-packages/lyncost-mobile.apk)
 [![Built with: Tauri v2](https://img.shields.io/badge/Built%20with-Tauri%20v2-24C8D8.svg)](https://tauri.app/)
@@ -185,23 +186,27 @@ All generated distribution packages and checksums will be placed in `./dist-pack
 
 ---
 
-## License
-
-Lyncost is 100% free and open-source software, licensed under the **[GNU General Public License v3.0 (GPL-3.0)](LICENSE)**.
-
+## 🔒 License & Intellectual Property
+ 
+Lyncost is provided as **Source-Available Software** and is **100% Free for Personal Use** on Linux, licensed under the **[Lyncost Source-Available & Personal Use License](LICENSE)**.
+ 
 ```text
-Copyright (C) 2026 leodarshantech <leodarshantech@users.noreply.github.com>
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+Copyright (c) 2026 leodarshantech <leodarshantech@users.noreply.github.com>
+All Rights Reserved.
+ 
+- Personal Non-Commercial Use: You are free to view, compile, and use Lyncost on Linux.
+- Redistribution & Forking: You may NOT re-host, redistribute, mirror, fork, or sub-license
+  the source code or compiled binaries without prior written permission.
+- Commercial Rights: All commercial exploitation, re-selling, and cross-platform compilation
+  (including Windows and macOS official releases) are strictly reserved by the author.
+- Pull Requests: External pull requests are not accepted. See CONTRIBUTING.md.
 ```
-
+ 
 See the full [LICENSE](LICENSE) file for the complete terms and conditions.
+ 
+---
+ 
+## 🤝 Contributing
+ 
+To protect code ownership and legal clarity, **external pull requests are not accepted**. If you encounter a bug or have a suggestion, please open a ticket on [GitHub Issues](https://github.com/leodarshantech/lyncost/issues). See [CONTRIBUTING.md](CONTRIBUTING.md) for full details.
 

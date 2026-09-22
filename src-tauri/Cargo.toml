@@ -3,7 +3,7 @@ name = "lyncost"
 version = "0.1.5"
 description = "Lyncost - 100% Offline, Privacy-First Personal Finance & Investment Tracker for Linux"
 authors = ["leodarshantech <leodarshantech@users.noreply.github.com>"]
-license = "GPL-3.0-or-later"
+license = "SEE LICENSE IN LICENSE"
 repository = "https://github.com/leodarshantech/lyncost"
 edition = "2021"
 
