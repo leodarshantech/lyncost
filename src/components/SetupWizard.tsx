@@ -128,7 +128,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
     setCurrentStep(prev => Math.max(prev - 1, 1));
   };
 
-  const handleFinish = async () => {
+  const handleFinish = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setIsFinishing(true);
     try {
       const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
@@ -169,6 +173,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
 
       // 4. Complete
       localStorage.setItem('lyncost_wizard_completed', 'true');
+
+      if (typeof document !== 'undefined') {
+        (document.activeElement as HTMLElement)?.blur();
+      }
 
       if (onCompleted) onCompleted();
       onClose();

@@ -83,6 +83,10 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Do not trigger global shortcuts if setup wizard is open or Windows license activation is pending
+      if (isSetupWizardOpen || (isWindows && !isLicenseActivated)) {
+        return;
+      }
       // Ctrl+K or Cmd+K opens Command Palette
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -101,7 +105,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isQuickTxnOpen, isCommandPaletteOpen]);
+  }, [isQuickTxnOpen, isCommandPaletteOpen, isSetupWizardOpen, isWindows, isLicenseActivated]);
 
   const handleQuickTxnSaved = React.useCallback(async () => {
     await Promise.all([
@@ -118,6 +122,11 @@ export const App: React.FC = () => {
       <LicenseActivationScreen
         onActivated={() => {
           setIsLicenseActivated(true);
+          setIsQuickTxnOpen(false);
+          setIsCommandPaletteOpen(false);
+          if (typeof document !== 'undefined') {
+            (document.activeElement as HTMLElement)?.blur();
+          }
           setIsSetupWizardOpen(true);
         }}
       />
@@ -186,9 +195,21 @@ export const App: React.FC = () => {
       {/* Initial Setup Wizard */}
       <SetupWizard
         isOpen={isSetupWizardOpen}
-        onClose={() => setIsSetupWizardOpen(false)}
+        onClose={() => {
+          setIsSetupWizardOpen(false);
+          setIsQuickTxnOpen(false);
+          setIsCommandPaletteOpen(false);
+          if (typeof document !== 'undefined') {
+            (document.activeElement as HTMLElement)?.blur();
+          }
+        }}
         onCompleted={() => {
           setIsSetupWizardOpen(false);
+          setIsQuickTxnOpen(false);
+          setIsCommandPaletteOpen(false);
+          if (typeof document !== 'undefined') {
+            (document.activeElement as HTMLElement)?.blur();
+          }
           localStorage.setItem('lyncost_wizard_completed', 'true');
         }}
       />

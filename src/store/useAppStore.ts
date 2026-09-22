@@ -373,14 +373,14 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       if (typeof window !== 'undefined') {
         if (initialTheme === 'light') {
           document.documentElement.classList.add('theme-light');
-          document.documentElement.classList.remove('theme-dark');
+          document.documentElement.classList.remove('theme-dark', 'dark');
           document.body.classList.add('theme-light');
-          document.body.classList.remove('theme-dark');
+          document.body.classList.remove('theme-dark', 'dark');
         } else {
           document.documentElement.classList.remove('theme-light');
-          document.documentElement.classList.add('theme-dark');
+          document.documentElement.classList.add('theme-dark', 'dark');
           document.body.classList.remove('theme-light');
-          document.body.classList.add('theme-dark');
+          document.body.classList.add('theme-dark', 'dark');
         }
       }
 
@@ -1487,14 +1487,14 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     if (typeof window !== 'undefined') {
       if (theme === 'light') {
         document.documentElement.classList.add('theme-light');
-        document.documentElement.classList.remove('theme-dark');
+        document.documentElement.classList.remove('theme-dark', 'dark');
         document.body.classList.add('theme-light');
-        document.body.classList.remove('theme-dark');
+        document.body.classList.remove('theme-dark', 'dark');
       } else {
         document.documentElement.classList.remove('theme-light');
-        document.documentElement.classList.add('theme-dark');
+        document.documentElement.classList.add('theme-dark', 'dark');
         document.body.classList.remove('theme-light');
-        document.body.classList.add('theme-dark');
+        document.body.classList.add('theme-dark', 'dark');
       }
     }
     try {

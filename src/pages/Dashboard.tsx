@@ -60,6 +60,18 @@ export const Dashboard: React.FC = () => {
   const isPrivacyMode = useAppStore(state => state.isPrivacyMode);
   const togglePrivacyMode = useAppStore(state => state.togglePrivacyMode);
 
+  const mountTimeRef = React.useRef(Date.now());
+
+  const handleOpenTxnModal = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Guard against ghost click / click-through if wizard just closed
+    if (Date.now() - mountTimeRef.current < 400) {
+      return;
+    }
+    setIsTxnModalOpen(true);
+  };
+
   useEffect(() => {
     loadAccounts(false);
     loadTransactions();
@@ -169,7 +181,7 @@ export const Dashboard: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => setIsTxnModalOpen(true)}
+            onClick={handleOpenTxnModal}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black shadow-md transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -789,6 +801,14 @@ export const Dashboard: React.FC = () => {
       <TransactionModal
         isOpen={isTxnModalOpen}
         onClose={() => setIsTxnModalOpen(false)}
+        onSaved={async () => {
+          await Promise.all([
+            loadTransactions(),
+            loadMonthSummary(),
+            loadAccounts(false),
+            loadNetWorthSummary(),
+          ]);
+        }}
       />
     </div>
   );
