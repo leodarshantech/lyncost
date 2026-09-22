@@ -21,6 +21,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { UpdateBanner } from './components/UpdateBanner';
 import { PinScreen } from './components/PinScreen';
 import { SetupWizard } from './components/SetupWizard';
+import { LicenseActivationScreen } from './components/LicenseActivationScreen';
 import { RefreshCw, Coins } from 'lucide-react';
 import './App.css';
 
@@ -37,9 +38,29 @@ export const App: React.FC = () => {
 
   const theme = useAppStore(state => state.theme);
 
+  // Detect Windows vs Linux (or ?license_test=1 for developer preview)
+  const isLicenseTest = typeof window !== 'undefined' && window.location.search.includes('license_test');
+  const isWindows = typeof window !== 'undefined' && (/win/i.test(navigator.userAgent || navigator.platform) || isLicenseTest);
+  const [isLicenseActivated, setIsLicenseActivated] = React.useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    if (isLicenseTest) return false;
+    // On Linux / non-Windows, Lyncost is free
+    if (!/win/i.test(navigator.userAgent || navigator.platform)) {
+      return true;
+    }
+    return localStorage.getItem('lyncost_license_activated') === 'true';
+  });
+
   const [isQuickTxnOpen, setIsQuickTxnOpen] = React.useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = React.useState(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = React.useState(false);
+
+  // Developer preview hook (allows testing activation screen anytime via console)
+  useEffect(() => {
+    const handleTest = () => setIsLicenseActivated(false);
+    window.addEventListener('test_license_screen', handleTest);
+    return () => window.removeEventListener('test_license_screen', handleTest);
+  }, []);
 
   useEffect(() => {
     initApp();
@@ -90,6 +111,18 @@ export const App: React.FC = () => {
       loadNetWorthSummary(),
     ]);
   }, [loadTransactions, loadMonthSummary, loadAccounts, loadNetWorthSummary]);
+
+  // On Windows (or during developer preview), gate access behind license activation immediately
+  if (isWindows && !isLicenseActivated) {
+    return (
+      <LicenseActivationScreen
+        onActivated={() => {
+          setIsLicenseActivated(true);
+          setIsSetupWizardOpen(true);
+        }}
+      />
+    );
+  }
 
   if (isLoading) {
     return (

@@ -131,37 +131,44 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
   const handleFinish = async () => {
     setIsFinishing(true);
     try {
+      const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+
       // 1. Set Currency & Number format
-      await setBaseCurrency(selectedCurrency);
+      if (isTauri) {
+        await setBaseCurrency(selectedCurrency);
+      }
       setNumberFormatSystem(numberFormat);
       autoSyncNumberFormatWithCurrency(selectedCurrency);
 
-      // 2. Create accounts
-      const activeAccounts = accountsList.filter(a => a.enabled && a.name.trim());
-      for (const acc of activeAccounts) {
-        const bal = parseFloat(acc.balance) || 0;
-        await createAccount({
-          name: acc.name.trim(),
-          type: acc.type,
-          currency: selectedCurrency,
-          opening_balance: bal,
-          color: acc.color,
-          icon: acc.icon,
-        });
-      }
+      // 2. Create accounts (on desktop app)
+      if (isTauri) {
+        const activeAccounts = accountsList.filter(a => a.enabled && a.name.trim());
+        for (const acc of activeAccounts) {
+          const bal = parseFloat(acc.balance) || 0;
+          await createAccount({
+            name: acc.name.trim(),
+            type: acc.type,
+            currency: selectedCurrency,
+            opening_balance: bal,
+            color: acc.color,
+            icon: acc.icon,
+          });
+        }
 
-      // 3. Set PIN if selected
-      if (enablePin && pinCode.length === 6 && pinCode === confirmPinCode) {
-        await setPin(pinCode);
+        // 3. Set PIN if selected
+        if (enablePin && pinCode.length === 6 && pinCode === confirmPinCode) {
+          await setPin(pinCode);
+        }
+
+        await Promise.all([
+          loadAccounts(false),
+          loadMonthSummary(),
+          loadNetWorthSummary(),
+        ]);
       }
 
       // 4. Complete
       localStorage.setItem('lyncost_wizard_completed', 'true');
-      await Promise.all([
-        loadAccounts(false),
-        loadMonthSummary(),
-        loadNetWorthSummary(),
-      ]);
 
       if (onCompleted) onCompleted();
       onClose();

@@ -3,6 +3,8 @@ name: Build Windows Release
 on:
   workflow_dispatch: # Allows manual trigger from GitHub Actions web tab
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 

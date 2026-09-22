@@ -339,6 +339,27 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   initApp: async () => {
     set({ isLoading: true, error: null });
     try {
+      const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+      if (!isTauri) {
+        // Safe mock for web preview (avoids "window.__TAURI_INTERNALS__ is undefined" error)
+        const mockSettings: AppSettings = {
+          id: 1,
+          base_currency: 'USD',
+          theme: 'dark',
+          has_pin: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as any;
+        set({
+          settings: mockSettings,
+          theme: 'dark',
+          isUnlocked: true,
+          isLoading: false,
+          error: null,
+        });
+        return;
+      }
+
       const settings = await invoke<AppSettings>('get_app_settings');
       if (settings?.base_currency) {
         safeSetStorage('lyncost_base_currency', settings.base_currency);
