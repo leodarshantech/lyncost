@@ -21,6 +21,8 @@ import {
   Lock,
   Bell,
   Check,
+  Key,
+  Copy,
   Globe,
   Calendar,
   Sun,
@@ -119,6 +121,22 @@ export const SettingsPage: React.FC = () => {
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinSuccess, setPinSuccess] = useState<string | null>(null);
+
+  // Windows License Key retrieval
+  const [savedLicenseKey] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('lyncost_license_key');
+    }
+    return null;
+  });
+  const [copiedLicenseKey, setCopiedLicenseKey] = useState(false);
+  const handleCopyLicenseKey = () => {
+    if (savedLicenseKey) {
+      navigator.clipboard.writeText(savedLicenseKey);
+      setCopiedLicenseKey(true);
+      setTimeout(() => setCopiedLicenseKey(false), 2000);
+    }
+  };
 
   // Backup & Restore
   const [isCustomBackupOpen, setIsCustomBackupOpen] = useState(false);
@@ -560,6 +578,74 @@ export const SettingsPage: React.FC = () => {
           <span className="font-mono">Lyncost v0.1.5 • Native Linux Desktop</span>
         </div>
       </div>
+
+      {/* Windows Lifetime License & Key Recovery Card */}
+      {savedLicenseKey && (
+        <div className={`p-5 rounded-2xl border shadow-lg space-y-3 transition-all ${
+          theme === 'light'
+            ? 'bg-gradient-to-r from-amber-50/90 via-white to-amber-50/50 border-amber-300/80 shadow-amber-950/5'
+            : 'bg-gradient-to-r from-amber-950/40 via-zinc-900 to-zinc-900 border-amber-500/30 shadow-black/50'
+        }`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-amber-500" />
+                <h3 className={`text-sm font-black tracking-tight ${
+                  theme === 'light' ? 'text-slate-950' : 'text-white'
+                }`}>
+                  Windows Lifetime License
+                </h3>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                  theme === 'light'
+                    ? 'bg-amber-100 text-amber-800 border-amber-300'
+                    : 'bg-amber-900/60 text-amber-200 border-amber-600'
+                }`}>
+                  Active (Lifetime)
+                </span>
+              </div>
+              <p className={`text-xs max-w-xl leading-relaxed ${
+                theme === 'light' ? 'text-slate-600' : 'text-zinc-400'
+              }`}>
+                Your software license is active on this device. If you switch to another PC or reinstall, copy this key to activate Lyncost there.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <div className={`px-3 py-2 rounded-xl border font-mono text-xs tracking-wider font-bold select-all ${
+                theme === 'light'
+                  ? 'bg-slate-100 border-slate-300 text-slate-900'
+                  : 'bg-zinc-950 border-zinc-800 text-amber-300'
+              }`}>
+                {savedLicenseKey}
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyLicenseKey}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  copiedLicenseKey
+                    ? 'bg-emerald-500 text-white'
+                    : theme === 'light'
+                      ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-sm'
+                      : 'bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold'
+                }`}
+                title="Copy License Key to Clipboard"
+              >
+                {copiedLicenseKey ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Key</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Software Version & Updates Card */}
       <div className={`p-5 rounded-2xl border transition-all ${
