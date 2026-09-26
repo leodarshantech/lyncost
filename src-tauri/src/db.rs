@@ -1,11 +1,22 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use rusqlite::{params, Connection};
 use tauri::{AppHandle, Manager};
 
 pub struct AppState {
     pub db: Mutex<Connection>,
+    /// Set when the database could not be opened or migrated at startup.
+    /// The frontend shows this instead of an empty (in-memory) app.
+    pub startup_error: Option<String>,
+}
+
+impl AppState {
+    /// Locks the database, recovering from a poisoned mutex so a single
+    /// panicking command can never brick every subsequent command.
+    pub fn conn(&self) -> MutexGuard<'_, Connection> {
+        self.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 pub fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
@@ -195,18 +206,51 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), String> {
     }
 
     if latest_version < 7 {
+        // Rebuilding `transactions` requires foreign keys to be OFF. The pragma is a
+        // no-op inside a transaction, so it must be toggled before BEGIN; otherwise
+        // DROP TABLE cascades into transaction_tags and fails on linked warranties.
         let migration_sql = include_str!("../migrations/007_relax_payment_type.sql");
-        let tx = conn.transaction().map_err(|e| format!("Failed to start migration 007 transaction: {}", e))?;
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")
+            .map_err(|e| format!("Failed to disable foreign keys for migration 007: {}", e))?;
 
-        tx.execute_batch(migration_sql)
-            .map_err(|e| format!("Failed to execute migration 007: {}", e))?;
+        let result = (|| -> Result<(), String> {
+            let tx = conn.transaction().map_err(|e| format!("Failed to start migration 007 transaction: {}", e))?;
+            tx.execute_batch(migration_sql)
+                .map_err(|e| format!("Failed to execute migration 007: {}", e))?;
+            tx.execute(
+                "INSERT OR REPLACE INTO schema_migrations (version) VALUES (7);",
+                [],
+            ).map_err(|e| format!("Failed to record migration 007: {}", e))?;
+            tx.commit().map_err(|e| format!("Failed to commit migration 007: {}", e))
+        })();
+
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(|e| format!("Failed to re-enable foreign keys: {}", e))?;
+        result?;
+    }
+
+    if latest_version < 8 {
+        let tx = conn.transaction().map_err(|e| format!("Failed to start migration 008 transaction: {}", e))?;
+
+        for statement in include_str!("../migrations/008_indexes_and_security.sql").split(';') {
+            let stmt = statement.trim();
+            if stmt.is_empty() {
+                continue;
+            }
+            if let Err(e) = tx.execute(stmt, []) {
+                let err_str = e.to_string();
+                if !err_str.contains("duplicate column name") {
+                    return Err(format!("Failed to execute migration 008 statement: {}", err_str));
+                }
+            }
+        }
 
         tx.execute(
-            "INSERT OR REPLACE INTO schema_migrations (version) VALUES (7);",
+            "INSERT OR REPLACE INTO schema_migrations (version) VALUES (8);",
             [],
-        ).map_err(|e| format!("Failed to record migration 007: {}", e))?;
+        ).map_err(|e| format!("Failed to record migration 008: {}", e))?;
 
-        tx.commit().map_err(|e| format!("Failed to commit migration 007: {}", e))?;
+        tx.commit().map_err(|e| format!("Failed to commit migration 008: {}", e))?;
     }
 
     seed_defaults(conn)?;
@@ -1427,6 +1471,67 @@ mod tests {
         ).unwrap();
         assert_eq!(count_after_del, 4);
     }
+    #[test]
+    fn test_migration_007_preserves_tags_and_linked_warranties() {
+        let mut conn = setup_test_db();
+        conn.execute("INSERT INTO accounts (id, name, type) VALUES (1, 'Bank', 'bank')", []).unwrap();
+        conn.execute(
+            "INSERT INTO transactions (id, account_id, type, amount, base_amount) VALUES (1, 1, 'expense', 10, 10)",
+            [],
+        ).unwrap();
+        conn.execute("INSERT INTO tags (id, name) VALUES (99, 'keepme')", []).unwrap();
+        conn.execute("INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (1, 99)", []).unwrap();
+        conn.execute("INSERT INTO warranties (item_name, transaction_id) VALUES ('TV', 1)", []).unwrap();
+
+        // Pretend this database predates migration 007 and upgrade it again
+        conn.execute("DELETE FROM schema_migrations WHERE version >= 7", []).unwrap();
+        run_migrations(&mut conn).expect("migration 007 must succeed with linked warranties");
+
+        let tag_links: i64 = conn.query_row("SELECT COUNT(*) FROM transaction_tags", [], |r| r.get(0)).unwrap();
+        assert_eq!(tag_links, 1, "migration 007 must not delete transaction tags");
+        let fk_on: i64 = conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0)).unwrap();
+        assert_eq!(fk_on, 1, "foreign keys must be re-enabled after migration 007");
+    }
+
+    #[test]
+    fn test_recompute_balance_sets_running_totals() {
+        let mut conn = setup_test_db();
+        conn.execute("INSERT INTO accounts (id, name, type) VALUES (1, 'Bank', 'bank')", []).unwrap();
+        for amt in [100.0, -30.25, 50.10, -0.05] {
+            conn.execute(
+                "INSERT INTO account_ledger (account_id, txn_type, amount, balance_after) VALUES (1, 'x', ?1, 0)",
+                params![amt],
+            ).unwrap();
+        }
+        let tx = conn.transaction().unwrap();
+        let bal = crate::commands::recompute_account_balance(&tx, 1).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(bal, 119.8);
+
+        let running: Vec<f64> = conn
+            .prepare("SELECT balance_after FROM account_ledger WHERE account_id = 1 ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(running, vec![100.0, 69.75, 119.85, 119.8]);
+        let current: f64 = conn.query_row("SELECT current_balance FROM accounts WHERE id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(current, 119.8);
+    }
+
+    #[test]
+    fn test_monthly_advance_keeps_anchor_day() {
+        use chrono::NaiveDate;
+        let jan31 = NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
+        let feb = crate::commands::advance_month_anchored(jan31, 31);
+        assert_eq!(feb, NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
+        let mar = crate::commands::advance_month_anchored(feb, 31);
+        assert_eq!(mar, NaiveDate::from_ymd_opt(2026, 3, 31).unwrap(), "must not drift to the 28th");
+        let dec = NaiveDate::from_ymd_opt(2026, 12, 15).unwrap();
+        assert_eq!(crate::commands::advance_month_anchored(dec, 15), NaiveDate::from_ymd_opt(2027, 1, 15).unwrap());
+    }
 }
+
 
 

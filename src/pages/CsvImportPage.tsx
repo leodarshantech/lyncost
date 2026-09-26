@@ -12,6 +12,7 @@ import {
   Check,
   RotateCcw,
 } from 'lucide-react';
+import { toLocalDateString } from '../lib/utils';
 
 interface PreviewRow {
   rowNum: number;
@@ -149,7 +150,7 @@ export const CsvImportPage: React.FC = () => {
 
     // Date
     const rawDate = dateColIdx >= 0 && row[dateColIdx] ? row[dateColIdx] : '';
-    const date = rawDate || new Date().toISOString().split('T')[0];
+    const date = rawDate || toLocalDateString();
 
     // Amount
     const rawAmountStr = amountColIdx >= 0 && row[amountColIdx] ? row[amountColIdx] : '';

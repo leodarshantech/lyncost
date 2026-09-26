@@ -1,7 +1,7 @@
 {
   "name": "lyncost",
-  "version": "0.1.6",
-  "description": "Lyncost — 100% Offline, Privacy-First Personal Finance & Investment Tracker for Linux",
+  "version": "0.1.7",
+  "description": "Lyncost \u2014 100% Offline, Privacy-First Personal Finance & Investment Tracker for Linux",
   "author": "leodarshantech <leodarshantech@users.noreply.github.com>",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -20,7 +20,8 @@
     "tauri": "tauri",
     "release": "npm run build && tauri build --no-bundle",
     "dist": "bash packaging/build_packages.sh",
-    "install:local": "npm run release && cp -f src-tauri/target/release/lyncost ~/.local/bin/lyncost.tmp && mv -f ~/.local/bin/lyncost.tmp ~/.local/bin/lyncost"
+    "install:local": "npm run release && cp -f src-tauri/target/release/lyncost ~/.local/bin/lyncost.tmp && mv -f ~/.local/bin/lyncost.tmp ~/.local/bin/lyncost",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -36,13 +37,17 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.5.4",
+    "jsdom": "^26.1.0",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^3.2.7"
   }
 }

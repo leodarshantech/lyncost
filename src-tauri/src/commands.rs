@@ -22,6 +22,7 @@ use crate::models::{
     BillReminder, UpdateNotificationSettingsPayload, AppUpdateInfo,
     DebtTransactionItem, RecordDebtPaymentPayload, DrawDebtFundsPayload, SpendFromDebtPayload,
     PaymentMethodItem, CreatePaymentMethodPayload, UpdatePaymentMethodPayload,
+    PinVerifyResult,
 };
 
 // --- Exchange Rate Helper ---
@@ -59,21 +60,26 @@ pub fn get_exchange_rate(conn: &Connection, from_curr: &str, to_curr: &str) -> f
 
 // --- Account Balance Recomputation via Ledger (AGENTS.md Section 5.1) ---
 pub fn recompute_account_balance(tx: &SqliteTx, account_id: i64) -> Result<f64, rusqlite::Error> {
-    let mut stmt = tx.prepare(
-        "SELECT id, amount FROM account_ledger WHERE account_id = ?1 ORDER BY id ASC"
+    // One set-based UPDATE (running sum via window function) instead of one
+    // UPDATE per ledger row; stays fast for accounts with thousands of entries.
+    tx.execute(
+        "UPDATE account_ledger
+         SET balance_after = running.bal
+         FROM (
+             SELECT id, ROUND(SUM(amount) OVER (ORDER BY id ROWS UNBOUNDED PRECEDING), 2) AS bal
+             FROM account_ledger
+             WHERE account_id = ?1
+         ) AS running
+         WHERE account_ledger.id = running.id
+           AND account_ledger.balance_after IS NOT running.bal",
+        params![account_id],
     )?;
-    let entries: Vec<(i64, f64)> = stmt.query_map(params![account_id], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    })?.filter_map(|r| r.ok()).collect();
 
-    let mut running_bal = 0.0;
-    for (ledger_id, amount) in entries {
-        running_bal = ((running_bal + amount) * 100.0).round() / 100.0;
-        tx.execute(
-            "UPDATE account_ledger SET balance_after = ?1 WHERE id = ?2",
-            params![running_bal, ledger_id],
-        )?;
-    }
+    let running_bal: f64 = tx.query_row(
+        "SELECT ROUND(COALESCE(SUM(amount), 0), 2) FROM account_ledger WHERE account_id = ?1",
+        params![account_id],
+        |r| r.get(0),
+    )?;
 
     tx.execute(
         "UPDATE accounts SET current_balance = ?1 WHERE id = ?2",
@@ -84,20 +90,24 @@ pub fn recompute_account_balance(tx: &SqliteTx, account_id: i64) -> Result<f64, 
 }
 
 // --- Date Math Helpers ---
+fn days_in_month(year: i32, month: u32) -> u32 {
+    let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    NaiveDate::from_ymd_opt(ny, nm, 1)
+        .and_then(|d| d.pred_opt())
+        .map(|d| d.day())
+        .unwrap_or(28)
+}
+
+/// Moves forward one month, landing on `anchor_day` (clamped to the month's length).
+/// Keeping the original anchor prevents drift: Jan 31 -> Feb 28 -> Mar 31, not Mar 28.
+pub fn advance_month_anchored(d: NaiveDate, anchor_day: u32) -> NaiveDate {
+    let (year, month) = if d.month() == 12 { (d.year() + 1, 1) } else { (d.year(), d.month() + 1) };
+    let day = anchor_day.clamp(1, 31).min(days_in_month(year, month));
+    NaiveDate::from_ymd_opt(year, month, day).unwrap_or(d)
+}
+
 pub fn advance_month(d: NaiveDate) -> NaiveDate {
-    let mut year = d.year();
-    let mut month = d.month() + 1;
-    if month > 12 {
-        month = 1;
-        year += 1;
-    }
-    let day = d.day();
-    for test_day in (28..=day).rev() {
-        if let Some(date) = NaiveDate::from_ymd_opt(year, month, test_day) {
-            return date;
-        }
-    }
-    NaiveDate::from_ymd_opt(year, month, 28).unwrap()
+    advance_month_anchored(d, d.day())
 }
 
 pub fn advance_year(d: NaiveDate) -> NaiveDate {
@@ -118,7 +128,7 @@ pub fn calculate_budget_period(
     today: NaiveDate,
 ) -> (NaiveDate, NaiveDate, Option<(NaiveDate, NaiveDate)>) {
     let start_date = NaiveDate::parse_from_str(start_date_str, "%Y-%m-%d")
-        .unwrap_or_else(|_| today);
+        .unwrap_or(today);
 
     match period_type {
         "weekly" => {
@@ -142,18 +152,18 @@ pub fn calculate_budget_period(
         }
         "monthly" => {
             if today < start_date {
-                let cur_end = advance_month(start_date) - Duration::days(1);
+                let cur_end = advance_month_anchored(start_date, start_date.day()) - Duration::days(1);
                 (start_date, cur_end, None)
             } else {
                 let mut cur_start = start_date;
-                let mut next_start = advance_month(cur_start);
+                let mut next_start = advance_month_anchored(cur_start, start_date.day());
                 let mut prev_period: Option<(NaiveDate, NaiveDate)> = None;
 
                 while next_start <= today {
                     let p_end = next_start - Duration::days(1);
                     prev_period = Some((cur_start, p_end));
                     cur_start = next_start;
-                    next_start = advance_month(cur_start);
+                    next_start = advance_month_anchored(cur_start, start_date.day());
                 }
                 let cur_end = next_start - Duration::days(1);
                 (cur_start, cur_end, prev_period)
@@ -175,7 +185,7 @@ pub fn calculate_budget_period(
 
 #[tauri::command]
 pub fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let mut stmt = conn
         .prepare(
@@ -208,14 +218,14 @@ pub fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, Strin
     Ok(settings)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_initial_pin(state: State<'_, AppState>, pin: String) -> Result<(), String> {
     let pin_trimmed = pin.trim();
-    if pin_trimmed.len() != 6 || !pin_trimmed.chars().all(|c| c.is_ascii_digit()) {
+    if !is_valid_pin_format(pin_trimmed) {
         return Err("PIN must be exactly 6 digits (0-9)".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let _ = crate::db::seed_defaults(&conn);
 
     let existing_pin_hash: Option<String> = conn
@@ -240,26 +250,93 @@ pub fn set_initial_pin(state: State<'_, AppState>, pin: String) -> Result<(), St
     Ok(())
 }
 
-#[tauri::command]
-pub fn verify_pin(state: State<'_, AppState>, pin: String) -> Result<bool, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+const PIN_FREE_ATTEMPTS: i64 = 5;
+const PIN_BASE_LOCKOUT_SECS: i64 = 30;
+const PIN_MAX_LOCKOUT_SECS: i64 = 15 * 60;
 
-    let pin_hash: Option<String> = conn
-        .query_row("SELECT pin_hash FROM app_settings WHERE id = 1", [], |r| r.get(0))
-        .unwrap_or(None);
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
 
-    let hash = match pin_hash {
+fn is_valid_pin_format(pin: &str) -> bool {
+    pin.len() == 6 && pin.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Verifies a PIN against the stored hash while enforcing a persistent,
+/// escalating lockout (30s, 60s, 120s ... capped at 15 min) after 5 failures.
+/// The counter lives in the database so restarting the app does not reset it.
+fn check_pin_with_lockout(conn: &Connection, pin: &str) -> Result<PinVerifyResult, String> {
+    let (hash, failed, locked_until): (Option<String>, i64, i64) = conn
+        .query_row(
+            "SELECT pin_hash, COALESCE(failed_pin_attempts, 0), COALESCE(pin_locked_until, 0) FROM app_settings WHERE id = 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(|e| format!("Failed to read PIN settings: {}", e))?;
+
+    let hash = match hash {
         Some(h) if !h.trim().is_empty() => h,
         _ => return Err("No PIN has been configured yet".to_string()),
     };
 
-    let is_valid = bcrypt::verify(pin.trim(), &hash).unwrap_or(false);
-    Ok(is_valid)
+    let now = now_unix();
+    if locked_until > now {
+        return Ok(PinVerifyResult {
+            valid: false,
+            lockout_seconds: locked_until - now,
+            remaining_attempts: 0,
+        });
+    }
+
+    let pin = pin.trim();
+    let is_valid = is_valid_pin_format(pin) && bcrypt::verify(pin, &hash).unwrap_or(false);
+
+    if is_valid {
+        conn.execute(
+            "UPDATE app_settings SET failed_pin_attempts = 0, pin_locked_until = 0 WHERE id = 1",
+            [],
+        ).map_err(|e| e.to_string())?;
+        return Ok(PinVerifyResult { valid: true, lockout_seconds: 0, remaining_attempts: PIN_FREE_ATTEMPTS });
+    }
+
+    let failed = failed + 1;
+    let lockout_seconds = if failed >= PIN_FREE_ATTEMPTS {
+        let exponent = (failed - PIN_FREE_ATTEMPTS).min(10) as u32;
+        (PIN_BASE_LOCKOUT_SECS * 2_i64.pow(exponent)).min(PIN_MAX_LOCKOUT_SECS)
+    } else {
+        0
+    };
+    let new_locked_until = if lockout_seconds > 0 { now + lockout_seconds } else { 0 };
+
+    conn.execute(
+        "UPDATE app_settings SET failed_pin_attempts = ?1, pin_locked_until = ?2 WHERE id = 1",
+        params![failed, new_locked_until],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(PinVerifyResult {
+        valid: false,
+        lockout_seconds,
+        remaining_attempts: (PIN_FREE_ATTEMPTS - failed).max(0),
+    })
+}
+
+#[tauri::command(async)]
+pub fn verify_pin(state: State<'_, AppState>, pin: String) -> Result<PinVerifyResult, String> {
+    let conn = state.conn();
+    check_pin_with_lockout(&conn, &pin)
+}
+
+#[tauri::command]
+pub fn get_startup_status(state: State<'_, AppState>) -> Option<String> {
+    state.startup_error.clone()
 }
 
 #[tauri::command]
 pub fn wipe_all_data(state: State<'_, AppState>) -> Result<(), String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -303,7 +380,7 @@ pub fn wipe_all_data(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_accounts(state: State<'_, AppState>, include_archived: bool) -> Result<Vec<Account>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let query = if include_archived {
         "SELECT id, name, type, currency, opening_balance, current_balance, icon, color, is_archived, created_at FROM accounts ORDER BY is_archived ASC, id ASC"
@@ -353,7 +430,7 @@ pub fn create_account(
     }
 
     let opening_bal = (payload.opening_balance * 100.0).round() / 100.0;
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -422,7 +499,7 @@ pub fn update_account(
         return Err(format!("Invalid account type: {}", payload.account_type));
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     conn.execute(
         "UPDATE accounts SET name = ?1, type = ?2, currency = ?3, icon = ?4, color = ?5 WHERE id = ?6",
@@ -461,7 +538,7 @@ pub fn update_account(
 
 #[tauri::command]
 pub fn archive_account(state: State<'_, AppState>, id: i64, archive: bool) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let val = if archive { 1 } else { 0 };
     conn.execute(
         "UPDATE accounts SET is_archived = ?1 WHERE id = ?2",
@@ -472,7 +549,7 @@ pub fn archive_account(state: State<'_, AppState>, id: i64, archive: bool) -> Re
 
 #[tauri::command]
 pub fn delete_account(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
 
     let txn_count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM transactions WHERE account_id = ?1 OR transfer_to_account_id = ?1",
@@ -527,7 +604,7 @@ pub fn get_account_ledger(
     state: State<'_, AppState>,
     account_id: i64,
 ) -> Result<Vec<AccountLedgerEntry>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let mut stmt = conn.prepare(
         "SELECT id, account_id, txn_type, amount, balance_after, reference_type, reference_id, txn_date
@@ -561,7 +638,7 @@ pub fn get_account_ledger(
 
 #[tauri::command]
 pub fn get_categories(state: State<'_, AppState>) -> Result<Vec<Category>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let mut stmt = conn.prepare(
         "SELECT id, name, kind, parent_id, icon, color FROM categories ORDER BY kind ASC, name ASC",
@@ -599,7 +676,7 @@ pub fn create_category(
         return Err("Category kind must be either 'income' or 'expense'".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     conn.execute(
         "INSERT INTO categories (name, kind, parent_id, icon, color) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -645,7 +722,7 @@ pub fn update_category(
         }
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     conn.execute(
         "UPDATE categories SET name = ?1, kind = ?2, parent_id = ?3, icon = ?4, color = ?5 WHERE id = ?6",
@@ -672,7 +749,7 @@ pub fn update_category(
 
 #[tauri::command]
 pub fn delete_category(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     // Check if used in transactions
     let txn_count: i64 = conn.query_row(
@@ -728,7 +805,7 @@ pub fn delete_category(state: State<'_, AppState>, id: i64) -> Result<(), String
 
 #[tauri::command]
 pub fn get_tags(state: State<'_, AppState>) -> Result<Vec<Tag>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let mut stmt = conn.prepare("SELECT id, name FROM tags ORDER BY name ASC").map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], |row| {
@@ -755,7 +832,7 @@ pub fn create_transaction(
     state: State<'_, AppState>,
     payload: CreateTransactionPayload,
 ) -> Result<Transaction, String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
 
     if payload.amount <= 0.0 {
         return Err("Transaction amount must be greater than zero".to_string());
@@ -787,7 +864,7 @@ pub fn create_transaction(
     let rate = get_exchange_rate(&tx, &src_currency, &base_currency);
     let base_amount = ((rounded_amount * rate) * 100.0).round() / 100.0;
 
-    let (category_id, transfer_to_account_id) = if payload.txn_type == "transfer" {
+    let (category_id, transfer_dest) = if payload.txn_type == "transfer" {
         let dest_id = payload.transfer_to_account_id
             .ok_or_else(|| "Destination account is required for a transfer".to_string())?;
 
@@ -796,13 +873,13 @@ pub fn create_transaction(
         }
 
         // Verify destination exists
-        let _: String = tx.query_row(
+        let dest_currency: String = tx.query_row(
             "SELECT currency FROM accounts WHERE id = ?1",
             params![dest_id],
             |r| r.get(0),
         ).map_err(|_| "Destination account not found".to_string())?;
 
-        (None, Some(dest_id))
+        (None, Some((dest_id, dest_currency)))
     } else {
         let verified_cat_id = payload.category_id.and_then(|cat_id| {
             let exists: bool = tx.query_row(
@@ -815,6 +892,7 @@ pub fn create_transaction(
         (verified_cat_id, None)
     };
 
+    let transfer_to_account_id = transfer_dest.as_ref().map(|(id, _)| *id);
     let is_confirmed_val = if payload.is_confirmed { 1 } else { 0 };
 
     // 3. Insert Transaction row
@@ -860,14 +938,12 @@ pub fn create_transaction(
             recompute_account_balance(&tx, payload.account_id).map_err(|e| e.to_string())?;
         }
         "transfer" => {
-            let dest_id = transfer_to_account_id.unwrap();
-            let dest_currency: String = tx.query_row(
-                "SELECT currency FROM accounts WHERE id = ?1",
-                params![dest_id],
-                |r| r.get(0),
-            ).unwrap();
+            let (dest_id, dest_currency) = transfer_dest
+                .as_ref()
+                .ok_or_else(|| "Destination account is required for a transfer".to_string())?;
+            let dest_id = *dest_id;
 
-            let dest_rate = get_exchange_rate(&tx, &src_currency, &dest_currency);
+            let dest_rate = get_exchange_rate(&tx, &src_currency, dest_currency);
             let dest_amount = ((rounded_amount * dest_rate) * 100.0).round() / 100.0;
 
             // Source account decreases
@@ -935,10 +1011,15 @@ pub fn update_transaction(
     id: i64,
     payload: UpdateTransactionPayload,
 ) -> Result<Transaction, String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
 
     if payload.amount <= 0.0 {
         return Err("Transaction amount must be greater than zero".to_string());
+    }
+
+    let allowed_types = ["income", "expense", "transfer"];
+    if !allowed_types.contains(&payload.txn_type.as_str()) {
+        return Err(format!("Invalid transaction type: {}", payload.txn_type));
     }
 
     let rounded_amount = (payload.amount * 100.0).round() / 100.0;
@@ -974,7 +1055,7 @@ pub fn update_transaction(
     let rate = get_exchange_rate(&tx, &src_currency, &base_currency);
     let base_amount = ((rounded_amount * rate) * 100.0).round() / 100.0;
 
-    let (category_id, transfer_to_account_id) = if payload.txn_type == "transfer" {
+    let (category_id, transfer_dest) = if payload.txn_type == "transfer" {
         let dest_id = payload.transfer_to_account_id
             .ok_or_else(|| "Destination account is required for a transfer".to_string())?;
 
@@ -982,7 +1063,13 @@ pub fn update_transaction(
             return Err("Source and destination accounts cannot be the same".to_string());
         }
 
-        (None, Some(dest_id))
+        let dest_currency: String = tx.query_row(
+            "SELECT currency FROM accounts WHERE id = ?1",
+            params![dest_id],
+            |r| r.get(0),
+        ).map_err(|_| "Destination account not found".to_string())?;
+
+        (None, Some((dest_id, dest_currency)))
     } else {
         let verified_cat_id = payload.category_id.and_then(|cat_id| {
             let exists: bool = tx.query_row(
@@ -995,6 +1082,7 @@ pub fn update_transaction(
         (verified_cat_id, None)
     };
 
+    let transfer_to_account_id = transfer_dest.as_ref().map(|(id, _)| *id);
     let is_confirmed_val = if payload.is_confirmed { 1 } else { 0 };
 
     // Update transactions table
@@ -1037,14 +1125,12 @@ pub fn update_transaction(
             ).map_err(|e| format!("Failed to insert ledger row: {}", e))?;
         }
         "transfer" => {
-            let dest_id = transfer_to_account_id.unwrap();
-            let dest_currency: String = tx.query_row(
-                "SELECT currency FROM accounts WHERE id = ?1",
-                params![dest_id],
-                |r| r.get(0),
-            ).unwrap();
+            let (dest_id, dest_currency) = transfer_dest
+                .as_ref()
+                .ok_or_else(|| "Destination account is required for a transfer".to_string())?;
+            let dest_id = *dest_id;
 
-            let dest_rate = get_exchange_rate(&tx, &src_currency, &dest_currency);
+            let dest_rate = get_exchange_rate(&tx, &src_currency, dest_currency);
             let dest_amount = ((rounded_amount * dest_rate) * 100.0).round() / 100.0;
 
             tx.execute(
@@ -1115,7 +1201,7 @@ pub fn update_transaction(
 
 #[tauri::command]
 pub fn delete_transaction(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -1146,7 +1232,7 @@ pub fn get_transactions(
     state: State<'_, AppState>,
     filter: TransactionFilter,
 ) -> Result<Vec<Transaction>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let mut query = String::from(
         "SELECT
@@ -1155,7 +1241,11 @@ pub fn get_transactions(
             t.transfer_to_account_id, a_to.name, a_to.currency,
             t.amount, t.base_amount, t.exchange_rate_used,
             t.payment_type, t.txn_date, t.note, t.is_confirmed,
-            t.recurring_rule_id, t.created_at
+            t.recurring_rule_id, t.created_at,
+            (SELECT GROUP_CONCAT(name, char(31)) FROM (
+                SELECT tg.name FROM transaction_tags tt JOIN tags tg ON tg.id = tt.tag_id
+                WHERE tt.transaction_id = t.id ORDER BY tg.name ASC
+            )) AS tag_names
          FROM transactions t
          JOIN accounts a ON a.id = t.account_id
          LEFT JOIN accounts a_to ON a_to.id = t.transfer_to_account_id
@@ -1248,23 +1338,17 @@ pub fn get_transactions(
             note: row.get(17)?,
             is_confirmed: row.get(18)?,
             recurring_rule_id: row.get(19)?,
-            tags: Vec::new(), // will fill tags below
+            tags: row
+                .get::<_, Option<String>>(21)?
+                .map(|joined| joined.split('\u{1f}').map(str::to_string).collect())
+                .unwrap_or_default(),
             created_at: row.get(20)?,
         })
     }).map_err(|e| e.to_string())?;
 
     let mut results = Vec::new();
     for t in txns {
-        let mut txn = t.map_err(|e| e.to_string())?;
-        // Fetch tags for this transaction
-        let mut tag_stmt = conn.prepare(
-            "SELECT tg.name FROM transaction_tags tt JOIN tags tg ON tg.id = tt.tag_id WHERE tt.transaction_id = ?1 ORDER BY tg.name ASC"
-        ).map_err(|e| e.to_string())?;
-        let tag_rows = tag_stmt.query_map(params![txn.id], |r| r.get(0)).map_err(|e| e.to_string())?;
-        for tag in tag_rows {
-            txn.tags.push(tag.map_err(|e| e.to_string())?);
-        }
-        results.push(txn);
+        results.push(t.map_err(|e| e.to_string())?);
     }
 
     Ok(results)
@@ -1328,52 +1412,28 @@ fn get_transaction_by_id(conn: &Connection, id: i64) -> Result<Transaction, Stri
 // Recurring Rules Engine (Task 6, Section 5.3)
 // ==========================================
 
-fn advance_date(date: NaiveDate, frequency: &str) -> NaiveDate {
+fn advance_date(date: NaiveDate, frequency: &str, anchor_day: Option<u32>) -> NaiveDate {
+    let anchor = anchor_day.unwrap_or_else(|| date.day());
     match frequency {
         "daily" => date + chrono::Duration::days(1),
         "weekly" => date + chrono::Duration::days(7),
-        "monthly" => {
-            let year = date.year();
-            let month = date.month();
-            let day = date.day();
-            let (new_year, new_month) = if month == 12 {
-                (year + 1, 1)
-            } else {
-                (year, month + 1)
-            };
-            let max_day = match new_month {
-                4 | 6 | 9 | 11 => 30,
-                2 => {
-                    if (new_year % 4 == 0 && new_year % 100 != 0) || (new_year % 400 == 0) {
-                        29
-                    } else {
-                        28
-                    }
-                }
-                _ => 31,
-            };
-            NaiveDate::from_ymd_opt(new_year, new_month, day.min(max_day)).unwrap_or(date)
-        }
+        "monthly" => advance_month_anchored(date, anchor),
         "yearly" => {
             let year = date.year() + 1;
-            let month = date.month();
-            let day = date.day();
-            let max_day = if month == 2 && ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
-                29
-            } else if month == 2 {
-                28
-            } else {
-                31
-            };
-            NaiveDate::from_ymd_opt(year, month, day.min(max_day)).unwrap_or(date)
+            let day = anchor.min(days_in_month(year, date.month()));
+            NaiveDate::from_ymd_opt(year, date.month(), day).unwrap_or(date)
         }
         _ => date + chrono::Duration::days(1),
     }
 }
 
-#[tauri::command]
+fn anchor_day_of(date_str: &str) -> Option<i64> {
+    NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok().map(|d| d.day() as i64)
+}
+
+#[tauri::command(async)]
 pub fn process_recurring_rules(state: State<'_, AppState>) -> Result<i64, String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let today = Local::now().date_naive();
     let today_str = today.format("%Y-%m-%d").to_string();
 
@@ -1381,7 +1441,7 @@ pub fn process_recurring_rules(state: State<'_, AppState>) -> Result<i64, String
 
     // Fetch active rules due on or before today
     let mut stmt = conn.prepare(
-        "SELECT id, name, account_id, type, category_id, transfer_to_account_id, amount, payment_type, frequency, next_due_date, note
+        "SELECT id, name, account_id, type, category_id, transfer_to_account_id, amount, payment_type, frequency, next_due_date, note, anchor_day
          FROM recurring_rules WHERE is_active = 1 AND next_due_date <= ?1"
     ).map_err(|e| e.to_string())?;
 
@@ -1396,6 +1456,7 @@ pub fn process_recurring_rules(state: State<'_, AppState>) -> Result<i64, String
         frequency: String,
         next_due_date: String,
         note: Option<String>,
+        anchor_day: Option<u32>,
     }
 
     let rows = stmt.query_map(params![today_str], |r| {
@@ -1410,6 +1471,7 @@ pub fn process_recurring_rules(state: State<'_, AppState>) -> Result<i64, String
             frequency: r.get(8)?,
             next_due_date: r.get(9)?,
             note: r.get(10)?,
+            anchor_day: r.get::<_, Option<i64>>(11)?.map(|d| d.clamp(1, 31) as u32),
         })
     }).map_err(|e| e.to_string())?;
 
@@ -1513,7 +1575,7 @@ pub fn process_recurring_rules(state: State<'_, AppState>) -> Result<i64, String
             }
 
             // Advance date
-            current_due = advance_date(current_due, &rule.frequency);
+            current_due = advance_date(current_due, &rule.frequency, rule.anchor_day);
             let next_due_str = current_due.format("%Y-%m-%d").to_string();
 
             tx.execute(
@@ -1531,7 +1593,7 @@ pub fn process_recurring_rules(state: State<'_, AppState>) -> Result<i64, String
 
 #[tauri::command]
 pub fn get_recurring_rules(state: State<'_, AppState>) -> Result<Vec<RecurringRule>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let mut stmt = conn.prepare(
         "SELECT
@@ -1591,7 +1653,7 @@ pub fn create_recurring_rule(
         return Err(format!("Invalid frequency: {}", payload.frequency));
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let (cat_id, dest_id) = if payload.rule_type == "transfer" {
         (None, payload.transfer_to_account_id)
@@ -1602,8 +1664,8 @@ pub fn create_recurring_rule(
     conn.execute(
         "INSERT INTO recurring_rules (
             name, account_id, type, category_id, transfer_to_account_id,
-            amount, payment_type, frequency, next_due_date, is_active, note
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10)",
+            amount, payment_type, frequency, next_due_date, is_active, note, anchor_day
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, ?11)",
         params![
             name_trimmed,
             payload.account_id,
@@ -1615,6 +1677,7 @@ pub fn create_recurring_rule(
             payload.frequency,
             payload.next_due_date,
             payload.note,
+            anchor_day_of(&payload.next_due_date),
         ],
     ).map_err(|e| format!("Failed to create recurring rule: {}", e))?;
 
@@ -1670,7 +1733,7 @@ pub fn update_recurring_rule(
         return Err("Amount must be greater than zero".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let (cat_id, dest_id) = if payload.rule_type == "transfer" {
         (None, payload.transfer_to_account_id)
@@ -1683,7 +1746,8 @@ pub fn update_recurring_rule(
     conn.execute(
         "UPDATE recurring_rules SET
             name = ?1, account_id = ?2, type = ?3, category_id = ?4, transfer_to_account_id = ?5,
-            amount = ?6, payment_type = ?7, frequency = ?8, next_due_date = ?9, is_active = ?10, note = ?11
+            amount = ?6, payment_type = ?7, frequency = ?8, next_due_date = ?9, is_active = ?10, note = ?11,
+            anchor_day = ?13
          WHERE id = ?12",
         params![
             name_trimmed,
@@ -1698,6 +1762,7 @@ pub fn update_recurring_rule(
             active_val,
             payload.note,
             id,
+            anchor_day_of(&payload.next_due_date),
         ],
     ).map_err(|e| format!("Failed to update recurring rule: {}", e))?;
 
@@ -1738,7 +1803,7 @@ pub fn update_recurring_rule(
 
 #[tauri::command]
 pub fn delete_recurring_rule(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute("DELETE FROM recurring_rules WHERE id = ?1", params![id])
         .map_err(|e| format!("Failed to delete recurring rule: {}", e))?;
     Ok(())
@@ -1753,7 +1818,7 @@ pub fn get_month_summary(
     state: State<'_, AppState>,
     month: Option<String>,
 ) -> Result<MonthSummary, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let target_month = month.unwrap_or_else(|| {
         Local::now().format("%Y-%m").to_string()
@@ -1808,7 +1873,7 @@ pub fn get_month_summary(
 
 #[tauri::command]
 pub fn get_budgets(state: State<'_, AppState>) -> Result<Vec<BudgetProgress>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let today = Local::now().date_naive();
 
     let mut stmt = conn.prepare(
@@ -1970,7 +2035,7 @@ pub fn create_budget(
         return Err("Please select at least one category for this budget".to_string());
     }
 
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let rollover_val = if payload.rollover { 1 } else { 0 };
@@ -2021,7 +2086,7 @@ pub fn update_budget(
         return Err("Please select at least one category for this budget".to_string());
     }
 
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let rollover_val = if payload.rollover { 1 } else { 0 };
@@ -2059,7 +2124,7 @@ pub fn update_budget(
 
 #[tauri::command]
 pub fn delete_budget(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute("DELETE FROM budgets WHERE id = ?1", params![id])
         .map_err(|e| format!("Failed to delete budget: {}", e))?;
     Ok(())
@@ -2069,7 +2134,7 @@ pub fn delete_budget(state: State<'_, AppState>, id: i64) -> Result<(), String> 
 
 #[tauri::command]
 pub fn get_goals(state: State<'_, AppState>) -> Result<Vec<Goal>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let mut stmt = conn
         .prepare(
             "SELECT id, name, target_amount, current_amount, target_date, account_id, color, icon, note, is_reached, created_at
@@ -2125,7 +2190,7 @@ pub fn get_goals(state: State<'_, AppState>) -> Result<Vec<Goal>, String> {
 
 #[tauri::command]
 pub fn create_goal(state: State<'_, AppState>, payload: CreateGoalPayload) -> Result<Goal, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let color = payload.color.unwrap_or_else(|| "#8b5cf6".to_string());
     let icon = payload.icon.unwrap_or_else(|| "target".to_string());
     let current_amount = payload.current_amount.unwrap_or(0.0);
@@ -2186,7 +2251,7 @@ pub fn update_goal(
     id: i64,
     payload: UpdateGoalPayload,
 ) -> Result<Goal, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let color = payload.color.unwrap_or_else(|| "#8b5cf6".to_string());
     let icon = payload.icon.unwrap_or_else(|| "target".to_string());
     let is_reached = if payload.current_amount >= payload.target_amount && payload.target_amount > 0.0 { 1 } else { payload.is_reached };
@@ -2234,7 +2299,7 @@ pub fn update_goal(
 
 #[tauri::command]
 pub fn delete_goal(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute("DELETE FROM goals WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -2245,7 +2310,7 @@ pub fn contribute_to_goal(
     state: State<'_, AppState>,
     payload: ContributeGoalPayload,
 ) -> Result<Goal, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     // Record contribution
     conn.execute(
@@ -2315,7 +2380,7 @@ pub fn contribute_to_goal(
 
 #[tauri::command]
 pub fn get_bills(state: State<'_, AppState>) -> Result<Vec<BillItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let today_str = Local::now().format("%Y-%m-%d").to_string();
 
     let mut stmt = conn.prepare(
@@ -2364,7 +2429,7 @@ pub fn create_bill(
         return Err("Bill amount must be greater than zero".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     conn.execute(
         "INSERT INTO bills (name, amount, due_date, account_id, category_id, is_paid, recurrence)
@@ -2400,7 +2465,7 @@ pub fn update_bill(
         return Err("Bill amount must be greater than zero".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let is_paid_val = if payload.is_paid { 1 } else { 0 };
 
     conn.execute(
@@ -2425,7 +2490,7 @@ pub fn update_bill(
 
 #[tauri::command]
 pub fn delete_bill(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let bill_info: Option<(String, Option<i64>)> = tx.query_row(
@@ -2470,7 +2535,7 @@ pub fn delete_bill(state: State<'_, AppState>, id: i64) -> Result<(), String> {
 
 #[tauri::command]
 pub fn mark_bill_paid(state: State<'_, AppState>, id: i64) -> Result<Transaction, String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // 1. Fetch bill details
@@ -2579,7 +2644,7 @@ pub fn mark_bill_paid(state: State<'_, AppState>, id: i64) -> Result<Transaction
 
 #[tauri::command]
 pub fn unmark_bill_paid(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let (name, account_id): (String, Option<i64>) = tx.query_row(
@@ -2625,7 +2690,7 @@ pub fn unmark_bill_paid(state: State<'_, AppState>, id: i64) -> Result<(), Strin
 
 #[tauri::command]
 pub fn get_shopping_items(state: State<'_, AppState>) -> Result<Vec<ShoppingListItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let mut stmt = conn.prepare(
         "SELECT id, name, is_checked, note, created_at FROM shopping_list_items ORDER BY is_checked ASC, id DESC"
@@ -2656,7 +2721,7 @@ pub fn create_shopping_item(
         return Err("Item name cannot be empty".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute(
         "INSERT INTO shopping_list_items (name, note) VALUES (?1, ?2)",
         params![name_trimmed, payload.note],
@@ -2683,7 +2748,7 @@ pub fn create_shopping_item(
 
 #[tauri::command]
 pub fn toggle_shopping_item(state: State<'_, AppState>, id: i64) -> Result<ShoppingListItem, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     conn.execute(
         "UPDATE shopping_list_items SET is_checked = 1 - is_checked WHERE id = ?1",
@@ -2718,7 +2783,7 @@ pub fn update_shopping_item(
         return Err("Item name cannot be empty".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute(
         "UPDATE shopping_list_items SET name = ?1, note = ?2 WHERE id = ?3",
         params![name_trimmed, payload.note, id],
@@ -2743,7 +2808,7 @@ pub fn update_shopping_item(
 
 #[tauri::command]
 pub fn delete_shopping_item(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute("DELETE FROM shopping_list_items WHERE id = ?1", params![id])
         .map_err(|e| format!("Failed to delete shopping item: {}", e))?;
     Ok(())
@@ -2751,7 +2816,7 @@ pub fn delete_shopping_item(state: State<'_, AppState>, id: i64) -> Result<(), S
 
 #[tauri::command]
 pub fn clear_completed_shopping_items(state: State<'_, AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute("DELETE FROM shopping_list_items WHERE is_checked = 1", [])
         .map_err(|e| format!("Failed to clear completed shopping items: {}", e))?;
     Ok(())
@@ -2761,7 +2826,7 @@ pub fn clear_completed_shopping_items(state: State<'_, AppState>) -> Result<(), 
 
 #[tauri::command]
 pub fn get_warranties(state: State<'_, AppState>) -> Result<Vec<WarrantyItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let today = Local::now().date_naive();
 
     let mut stmt = conn.prepare(
@@ -2781,7 +2846,7 @@ pub fn get_warranties(state: State<'_, AppState>) -> Result<Vec<WarrantyItem>, S
         let (days_remaining, is_expiring_soon, is_expired) = if let Some(ref exp_str) = expires_on {
             if let Ok(exp_date) = NaiveDate::parse_from_str(exp_str, "%Y-%m-%d") {
                 let diff = (exp_date - today).num_days();
-                (Some(diff), diff >= 0 && diff <= 30, diff < 0)
+                (Some(diff), (0..=30).contains(&diff), diff < 0)
             } else {
                 (None, false, false)
             }
@@ -2817,7 +2882,7 @@ pub fn create_warranty(
         return Err("Item name cannot be empty".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute(
         "INSERT INTO warranties (item_name, purchase_date, expires_on, transaction_id, notes)
          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -2848,7 +2913,7 @@ pub fn update_warranty(
         return Err("Item name cannot be empty".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute(
         "UPDATE warranties SET item_name = ?1, purchase_date = ?2, expires_on = ?3, notes = ?4 WHERE id = ?5",
         params![
@@ -2867,7 +2932,7 @@ pub fn update_warranty(
 
 #[tauri::command]
 pub fn delete_warranty(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute("DELETE FROM warranties WHERE id = ?1", params![id])
         .map_err(|e| format!("Failed to delete warranty: {}", e))?;
     Ok(())
@@ -2875,12 +2940,12 @@ pub fn delete_warranty(state: State<'_, AppState>, id: i64) -> Result<(), String
 
 // --- CSV Import ---
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_csv_transactions(
     state: State<'_, AppState>,
     payload: CsvImportPayload,
 ) -> Result<CsvImportResult, String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -2932,10 +2997,10 @@ pub fn import_csv_transactions(
                     resolved_cat_id = Some(cid);
                 } else {
                     let kind = if txn_type == "income" { "income" } else { "expense" };
-                    if let Ok(_) = tx.execute(
+                    if tx.execute(
                         "INSERT INTO categories (name, kind, icon, color) VALUES (?1, ?2, 'Tag', '#10b981')",
                         params![cat_trimmed, kind],
-                    ) {
+                    ).is_ok() {
                         resolved_cat_id = Some(tx.last_insert_rowid());
                     }
                 }
@@ -3009,7 +3074,7 @@ pub fn import_csv_transactions(
 
 #[tauri::command]
 pub fn get_holdings(state: State<AppState>) -> Result<Vec<InvestmentHolding>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let base_currency: String = conn
         .query_row("SELECT base_currency FROM app_settings WHERE id = 1", [], |r| r.get(0))
@@ -3161,7 +3226,7 @@ pub fn create_holding(state: State<AppState>, payload: CreateHoldingPayload) -> 
         return Err("Price cannot be negative".to_string());
     }
 
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
 
     // Verify account is of type 'investment'
     let acc_type: String = conn
@@ -3227,7 +3292,7 @@ pub fn update_holding(state: State<AppState>, id: i64, payload: UpdateHoldingPay
         return Err("Average buy price cannot be negative".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let rounded_qty = (payload.quantity * 1000000.0).round() / 1000000.0;
     let rounded_buy_price = (payload.avg_buy_price * 100.0).round() / 100.0;
 
@@ -3253,7 +3318,7 @@ pub fn update_holding(state: State<AppState>, id: i64, payload: UpdateHoldingPay
 
 #[tauri::command]
 pub fn archive_holding(state: State<AppState>, id: i64, is_archived: bool) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute(
         "UPDATE investment_holdings SET is_archived = ?1 WHERE id = ?2",
         params![if is_archived { 1 } else { 0 }, id],
@@ -3263,7 +3328,7 @@ pub fn archive_holding(state: State<AppState>, id: i64, is_archived: bool) -> Re
 
 #[tauri::command]
 pub fn delete_holding(state: State<AppState>, id: i64) -> Result<(), String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM investment_price_history WHERE holding_id = ?1", params![id])
         .map_err(|e| e.to_string())?;
@@ -3278,7 +3343,7 @@ pub fn update_holding_price(state: State<AppState>, payload: SinglePriceUpdatePa
     if payload.price < 0.0 {
         return Err("Price cannot be negative".to_string());
     }
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let rounded_price = (payload.price * 100.0).round() / 100.0;
     let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -3307,7 +3372,7 @@ pub fn bulk_update_holding_prices(
     state: State<AppState>,
     updates: Vec<SinglePriceUpdatePayload>,
 ) -> Result<(), String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -3339,7 +3404,7 @@ pub fn get_holding_price_history(
     state: State<AppState>,
     holding_id: i64,
 ) -> Result<Vec<PriceHistoryPoint>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let mut stmt = conn
         .prepare(
             "SELECT id, holding_id, price, recorded_at
@@ -3369,7 +3434,7 @@ pub fn get_holding_price_history(
 
 #[tauri::command]
 pub fn get_exchange_rates(state: State<AppState>) -> Result<Vec<ExchangeRateItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let mut stmt = conn
         .prepare(
             "SELECT id, from_currency, to_currency, rate, updated_at
@@ -3413,7 +3478,7 @@ pub fn set_exchange_rate(
         return Err("Exchange rate must be greater than zero".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     conn.execute(
@@ -3430,7 +3495,7 @@ pub fn set_exchange_rate(
 
 #[tauri::command]
 pub fn delete_exchange_rate(state: State<AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute("DELETE FROM exchange_rates WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -3440,7 +3505,7 @@ pub fn delete_exchange_rate(state: State<AppState>, id: i64) -> Result<(), Strin
 
 #[tauri::command]
 pub fn get_debts(state: State<AppState>) -> Result<Vec<DebtItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let mut stmt = conn
         .prepare(
             "SELECT id, name, principal, current_balance, total_borrowed, total_paid,
@@ -3477,7 +3542,7 @@ pub fn get_debts(state: State<AppState>) -> Result<Vec<DebtItem>, String> {
 
 #[tauri::command]
 pub fn get_debt_transactions(state: State<AppState>, debt_id: i64) -> Result<Vec<DebtTransactionItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let mut stmt = conn
         .prepare(
             "SELECT dt.id, dt.debt_id, dt.txn_type, dt.amount, dt.txn_date,
@@ -3520,7 +3585,7 @@ pub fn create_debt(state: State<AppState>, payload: CreateDebtPayload) -> Result
     if payload.name.trim().is_empty() {
         return Err("Debt name is required".to_string());
     }
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let principal = (payload.principal * 100.0).round() / 100.0;
 
     let initial_draw = payload.initial_draw
@@ -3616,7 +3681,7 @@ pub fn update_debt(state: State<AppState>, id: i64, payload: UpdateDebtPayload) 
     if payload.name.trim().is_empty() {
         return Err("Debt name is required".to_string());
     }
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let principal = (payload.principal * 100.0).round() / 100.0;
     let balance = (payload.current_balance * 100.0).round() / 100.0;
     let borrowed = payload.total_borrowed.unwrap_or(principal);
@@ -3658,7 +3723,7 @@ pub fn record_debt_payment(
     if payload.amount <= 0.0 {
         return Err("Payment amount must be greater than zero".to_string());
     }
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let amount = (payload.amount * 100.0).round() / 100.0;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -3744,7 +3809,7 @@ pub fn draw_debt_funds(
     if payload.amount <= 0.0 {
         return Err("Draw amount must be greater than zero".to_string());
     }
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let amount = (payload.amount * 100.0).round() / 100.0;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -3829,7 +3894,7 @@ pub fn spend_from_debt(
     if payload.amount <= 0.0 {
         return Err("Spend amount must be greater than zero".to_string());
     }
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.conn();
     let amount = (payload.amount * 100.0).round() / 100.0;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -3869,7 +3934,7 @@ pub fn spend_from_debt(
 
 #[tauri::command]
 pub fn delete_debt(state: State<AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let _ = conn.execute("DELETE FROM debt_transactions WHERE debt_id = ?1", params![id]);
     conn.execute("DELETE FROM debts WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
@@ -3967,7 +4032,7 @@ pub fn compute_net_worth_summary_internal(conn: &Connection) -> Result<NetWorthS
 
 #[tauri::command]
 pub fn get_net_worth_summary(state: State<AppState>) -> Result<NetWorthSummary, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     compute_net_worth_summary_internal(&conn)
 }
 
@@ -3976,7 +4041,7 @@ pub fn get_net_worth_history(
     state: State<AppState>,
     limit_days: Option<i64>,
 ) -> Result<Vec<NetWorthSnapshotItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let sql = if let Some(limit) = limit_days {
         format!(
@@ -4017,7 +4082,7 @@ pub fn get_net_worth_history(
 
 #[tauri::command]
 pub fn check_and_snapshot_net_worth(state: State<AppState>) -> Result<bool, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let today_str = Local::now().format("%Y-%m-%d").to_string();
 
     let count: i64 = conn
@@ -4059,7 +4124,7 @@ pub fn record_net_worth_snapshot(
     state: State<AppState>,
     snapshot_date: Option<String>,
 ) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let summary = compute_net_worth_summary_internal(&conn)?;
     let date_str = snapshot_date.unwrap_or_else(|| Local::now().format("%Y-%m-%d").to_string());
 
@@ -4106,7 +4171,7 @@ pub fn get_category_spending_report(
     state: State<AppState>,
     filter: ReportDateFilter,
 ) -> Result<Vec<CategorySpendingReportItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let mut query = String::from(
         "SELECT t.category_id,
@@ -4193,7 +4258,7 @@ pub fn get_income_expense_trend(
     state: State<AppState>,
     filter: ReportDateFilter,
 ) -> Result<Vec<IncomeExpenseTrendItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let period_expr = match filter.group_by.as_deref() {
         Some("day") => "substr(t.txn_date, 1, 10)",
@@ -4257,7 +4322,7 @@ pub fn get_income_expense_trend(
 pub fn get_investment_performance_report(
     state: State<AppState>,
 ) -> Result<InvestmentPerformanceReport, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let base_currency: String = conn
         .query_row("SELECT base_currency FROM app_settings WHERE id = 1", [], |r| r.get(0))
         .unwrap_or_else(|_| "INR".to_string());
@@ -4359,7 +4424,7 @@ fn get_backups_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(backups_dir)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_backups_list(app: AppHandle) -> Result<Vec<BackupFileInfo>, String> {
     let backups_dir = get_backups_dir(&app)?;
     let mut files = Vec::new();
@@ -4393,69 +4458,83 @@ pub fn get_backups_list(app: AppHandle) -> Result<Vec<BackupFileInfo>, String> {
     Ok(files)
 }
 
-#[tauri::command]
+/// Writes a consistent snapshot of the live database to `dest_path`.
+/// `VACUUM INTO` is transactionally safe even with WAL mode and pending writes,
+/// unlike copying the raw file.
+fn snapshot_database(conn: &Connection, dest_path: &Path) -> Result<(), String> {
+    if dest_path.exists() {
+        fs::remove_file(dest_path)
+            .map_err(|e| format!("Failed to replace existing file {:?}: {}", dest_path, e))?;
+    }
+    conn.execute("VACUUM INTO ?1", params![dest_path.to_string_lossy().to_string()])
+        .map_err(|e| format!("Failed to write backup to {:?}: {}", dest_path, e))?;
+    Ok(())
+}
+
+fn prune_internal_backups(app: &AppHandle, keep: usize) {
+    if let Ok(files) = get_backups_list(app.clone()) {
+        let rotating: Vec<_> = files
+            .iter()
+            .filter(|f| !f.filename.starts_with("lyncost_pre_restore_"))
+            .collect();
+        for file_to_delete in rotating.iter().skip(keep) {
+            let _ = fs::remove_file(&file_to_delete.file_path);
+        }
+    }
+}
+
+#[tauri::command(async)]
 pub fn create_backup(
     app: AppHandle,
     state: State<AppState>,
     custom_dest_folder: Option<String>,
 ) -> Result<String, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-
-    // Checkpoint WAL safely
-    let _: Result<i64, _> = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE);", [], |r| r.get(0));
-
-    let db_path = crate::db::get_db_path(&app)?;
-    if !db_path.exists() {
-        return Err("Database file does not exist to back up".to_string());
-    }
+    let conn = state.conn();
 
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
     let filename = format!("lyncost_{}.db", timestamp);
 
-    let (dest_path, is_internal) = if let Some(folder) = custom_dest_folder {
-        let p = PathBuf::from(folder);
-        if !p.exists() {
-            fs::create_dir_all(&p).map_err(|e| format!("Failed to create destination folder: {}", e))?;
+    let (dest_path, is_internal) = match custom_dest_folder.map(|f| f.trim().to_string()) {
+        Some(folder) if !folder.is_empty() => {
+            let p = PathBuf::from(folder);
+            if !p.is_absolute() {
+                return Err("Backup folder must be an absolute path (e.g. /home/you/Backups)".to_string());
+            }
+            if !p.exists() {
+                fs::create_dir_all(&p).map_err(|e| format!("Failed to create destination folder: {}", e))?;
+            }
+            (p.join(&filename), false)
         }
-        (p.join(&filename), false)
-    } else {
-        let internal_dir = get_backups_dir(&app)?;
-        (internal_dir.join(&filename), true)
+        _ => (get_backups_dir(&app)?.join(&filename), true),
     };
 
-    fs::copy(&db_path, &dest_path)
-        .map_err(|e| format!("Failed to copy database file to {:?}: {}", dest_path, e))?;
+    snapshot_database(&conn, &dest_path)?;
 
-    // Update last_backup_at
     conn.execute(
-        "UPDATE app_settings SET last_backup_at = CURRENT_TIMESTAMP WHERE id = 1",
+        "UPDATE app_settings SET last_backup_at = strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime') WHERE id = 1",
         [],
     ).map_err(|e| e.to_string())?;
+    drop(conn);
 
-    // If internal backups, maintain rotation: keep newest 10
+    // Internal backups rotate: keep the newest 10
     if is_internal {
-        if let Ok(files) = get_backups_list(app) {
-            if files.len() > 10 {
-                for file_to_delete in &files[10..] {
-                    let _ = fs::remove_file(&file_to_delete.file_path);
-                }
-            }
-        }
+        prune_internal_backups(&app, 10);
     }
 
     Ok(dest_path.to_string_lossy().to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn check_and_run_daily_backup(
     app: AppHandle,
     state: State<AppState>,
 ) -> Result<Option<String>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let last_backup_at: Option<String> = conn
         .query_row("SELECT last_backup_at FROM app_settings WHERE id = 1", [], |r| r.get(0))
         .optional()
-        .unwrap_or(None);
+        .unwrap_or(None)
+        .flatten();
 
     let today_prefix = Local::now().format("%Y-%m-%d").to_string();
 
@@ -4470,62 +4549,92 @@ pub fn check_and_run_daily_backup(
     Ok(Some(path))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn restore_backup(
     app: AppHandle,
     state: State<AppState>,
     backup_file_path: String,
 ) -> Result<(), String> {
-    let src = Path::new(&backup_file_path);
-    if !src.exists() {
-        return Err(format!("Backup file not found at {:?}", backup_file_path));
+    let src = PathBuf::from(backup_file_path.trim());
+    if !src.is_file() {
+        return Err(format!("Backup file not found at {:?}", src));
     }
 
-    // Verify it's a valid sqlite database by opening it
+    // Validate the backup thoroughly before touching the live database
     {
-        let test_conn = Connection::open(src)
+        let test_conn = Connection::open_with_flags(&src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| format!("Selected file is not a valid SQLite database: {}", e))?;
-        let test_count: Result<i64, _> = test_conn.query_row(
-            "SELECT COUNT(*) FROM app_settings",
-            [],
-            |r| r.get(0),
-        );
-        if test_count.is_err() {
+        let integrity: String = test_conn
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .map_err(|_| "Selected file is not a valid SQLite database".to_string())?;
+        if integrity != "ok" {
+            return Err(format!("Backup file is corrupted ({}). Restore aborted.", integrity));
+        }
+        let has_core_tables: bool = test_conn
+            .query_row(
+                "SELECT COUNT(*) = 3 FROM sqlite_master WHERE type = 'table' AND name IN ('app_settings', 'accounts', 'transactions')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+        if !has_core_tables {
             return Err("Selected file is not a valid Lyncost database backup".to_string());
         }
     }
 
     let db_path = crate::db::get_db_path(&app)?;
+    let backups_dir = get_backups_dir(&app)?;
 
-    // Lock database mutex exclusively during entire restore operation
-    let mut conn_guard = state.db.lock().map_err(|e| e.to_string())?;
+    // Hold the lock for the whole swap so no command touches a half-restored DB
+    let mut conn_guard = state.conn();
 
-    // Checkpoint and flush WAL mode
-    let _ = conn_guard.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA foreign_keys = OFF;");
+    // 1. Safety net: snapshot the current data so a bad restore is always reversible
+    let safety_path = backups_dir.join(format!(
+        "lyncost_pre_restore_{}.db",
+        Local::now().format("%Y%m%d_%H%M%S")
+    ));
+    snapshot_database(&conn_guard, &safety_path)
+        .map_err(|e| format!("Could not create safety backup, restore aborted: {}", e))?;
 
-    // Remove WAL and SHM files
-    let wal_path = db_path.with_extension("db-wal");
-    let shm_path = db_path.with_extension("db-shm");
-    let _ = fs::remove_file(&wal_path);
-    let _ = fs::remove_file(&shm_path);
+    // 2. Stage the backup next to the live DB (same filesystem => atomic rename)
+    let staging_path = db_path.with_extension("db.restore");
+    fs::copy(&src, &staging_path)
+        .map_err(|e| format!("Failed to stage backup file: {}", e))?;
 
-    fs::copy(src, &db_path)
-        .map_err(|e| format!("Failed to restore database file: {}", e))?;
+    // 3. Close the live connection before replacing its files
+    let placeholder = Connection::open_in_memory().map_err(|e| e.to_string())?;
+    let old_conn = std::mem::replace(&mut *conn_guard, placeholder);
+    let _ = old_conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    drop(old_conn);
 
-    // Reopen restored database
-    let mut new_conn = Connection::open(&db_path)
-        .map_err(|e| format!("Failed to reopen restored database: {}", e))?;
-    new_conn.execute_batch(
-        "PRAGMA foreign_keys = ON;
-         PRAGMA journal_mode = WAL;"
-    ).map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(db_path.with_extension("db-wal"));
+    let _ = fs::remove_file(db_path.with_extension("db-shm"));
 
-    crate::db::run_migrations(&mut new_conn)?;
-    let _ = crate::db::seed_defaults(&new_conn);
+    let swap_result = fs::rename(&staging_path, &db_path)
+        .map_err(|e| format!("Failed to replace database file: {}", e))
+        .and_then(|_| crate::db::init_database(&db_path));
 
-    *conn_guard = new_conn;
-
-    Ok(())
+    match swap_result {
+        Ok(new_conn) => {
+            *conn_guard = new_conn;
+            Ok(())
+        }
+        Err(e) => {
+            // Roll back to the safety snapshot so the app keeps working
+            let _ = fs::remove_file(&staging_path);
+            let _ = fs::copy(&safety_path, &db_path);
+            match crate::db::init_database(&db_path) {
+                Ok(conn) => *conn_guard = conn,
+                Err(reopen_err) => {
+                    return Err(format!(
+                        "Restore failed ({}) and the previous database could not be reopened ({}). Your pre-restore data is saved at {:?}.",
+                        e, reopen_err, safety_path
+                    ));
+                }
+            }
+            Err(format!("Restore failed, your previous data was kept: {}", e))
+        }
+    }
 }
 
 // --- Settings Commands ---
@@ -4537,7 +4646,7 @@ pub fn set_base_currency(state: State<AppState>, new_currency: String) -> Result
         return Err("Currency code must be 3-4 letters (e.g. INR, USD, EUR)".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let _ = crate::db::seed_defaults(&conn);
 
     conn.execute(
@@ -4556,7 +4665,7 @@ pub fn set_app_theme(state: State<AppState>, theme: String) -> Result<(), String
         return Err("Theme must be 'dark' or 'light'".to_string());
     }
 
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let _ = crate::db::seed_defaults(&conn);
 
     conn.execute(
@@ -4568,26 +4677,35 @@ pub fn set_app_theme(state: State<AppState>, theme: String) -> Result<(), String
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn change_pin(state: State<AppState>, payload: ChangePinPayload) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    let _ = crate::db::seed_defaults(&conn);
-
-    let current_hash: Option<String> = conn
-        .query_row("SELECT pin_hash FROM app_settings WHERE id = 1", [], |r| r.get(0))
-        .optional()
-        .unwrap_or(None);
-
-    if let Some(hash) = current_hash {
-        let is_valid = bcrypt::verify(payload.current_pin.trim(), &hash).unwrap_or(false);
-        if !is_valid {
-            return Err("Current PIN is incorrect".to_string());
-        }
+    let new_trimmed = payload.new_pin.trim();
+    if !is_valid_pin_format(new_trimmed) {
+        return Err("New PIN must be exactly 6 digits".to_string());
     }
 
-    let new_trimmed = payload.new_pin.trim();
-    if new_trimmed.len() != 6 || !new_trimmed.chars().all(|c| c.is_ascii_digit()) {
-        return Err("New PIN must be exactly 6 digits".to_string());
+    let conn = state.conn();
+    let _ = crate::db::seed_defaults(&conn);
+
+    let has_pin: bool = conn
+        .query_row("SELECT pin_hash FROM app_settings WHERE id = 1", [], |r| r.get::<_, Option<String>>(0))
+        .optional()
+        .unwrap_or(None)
+        .flatten()
+        .map(|h| !h.trim().is_empty())
+        .unwrap_or(false);
+
+    // Changing the PIN goes through the same lockout as unlocking, so it
+    // can't be used as an unlimited brute-force oracle.
+    if has_pin {
+        let result = check_pin_with_lockout(&conn, &payload.current_pin)?;
+        if !result.valid {
+            return Err(if result.lockout_seconds > 0 {
+                format!("Too many incorrect attempts. Try again in {} seconds.", result.lockout_seconds)
+            } else {
+                "Current PIN is incorrect".to_string()
+            });
+        }
     }
 
     let new_hash = bcrypt::hash(new_trimmed, bcrypt::DEFAULT_COST)
@@ -4595,7 +4713,7 @@ pub fn change_pin(state: State<AppState>, payload: ChangePinPayload) -> Result<(
 
     conn.execute(
         "INSERT INTO app_settings (id, pin_hash) VALUES (1, ?1)
-         ON CONFLICT(id) DO UPDATE SET pin_hash = excluded.pin_hash",
+         ON CONFLICT(id) DO UPDATE SET pin_hash = excluded.pin_hash, failed_pin_attempts = 0, pin_locked_until = 0",
         params![new_hash],
     ).map_err(|e| e.to_string())?;
 
@@ -4609,7 +4727,7 @@ pub fn update_notification_settings(
     state: State<AppState>,
     payload: UpdateNotificationSettingsPayload,
 ) -> Result<AppSettings, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let _ = crate::db::seed_defaults(&conn);
     let os_val = if payload.notify_os { 1 } else { 0 };
     let advance_days = if payload.notify_advance_days < 0 { 1 } else { payload.notify_advance_days };
@@ -4626,7 +4744,7 @@ pub fn update_notification_settings(
     get_app_settings(state)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn send_os_desktop_notification(title: String, body: String) -> Result<(), String> {
     let _ = std::process::Command::new("notify-send")
         .arg("-a")
@@ -4639,9 +4757,9 @@ pub fn send_os_desktop_notification(title: String, body: String) -> Result<(), S
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn check_and_send_due_reminders(state: State<AppState>) -> Result<Vec<BillReminder>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
 
     let (notify_os, advance_days, base_curr, last_check): (
         i64, i64, String, Option<String>
@@ -4775,144 +4893,195 @@ fn is_version_greater(latest: &str, current: &str) -> bool {
     false
 }
 
-#[tauri::command]
-pub fn check_app_update() -> Result<AppUpdateInfo, String> {
-    let current_version = env!("CARGO_PKG_VERSION").to_string();
+const UPDATE_REPO_PREFIXES: [&str; 2] = [
+    "https://github.com/leodarshantech/lyncost/",
+    "https://raw.githubusercontent.com/leodarshantech/lyncost/",
+];
 
-    let output = std::process::Command::new("curl")
-        .arg("-fsSL")
-        .arg("--connect-timeout")
-        .arg("4")
-        .arg("--max-time")
-        .arg("8")
-        .arg("https://raw.githubusercontent.com/leodarshantech/lyncost/main/version.json")
-        .output();
+fn is_trusted_update_url(url: &str) -> bool {
+    UPDATE_REPO_PREFIXES.iter().any(|prefix| url.starts_with(prefix)) && !url.contains("..")
+}
 
-    if let Ok(out) = output {
-        if out.status.success() {
-            if let Ok(json_str) = String::from_utf8(out.stdout) {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                    let latest_ver = val["version"].as_str().unwrap_or(&current_version).to_string();
-                    let release_notes = val["notes"].as_str().unwrap_or("Performance improvements and bug fixes.").to_string();
-                    let published_at = val["release_date"].as_str().unwrap_or("").to_string();
-                    let default_url = format!(
-                        "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-{}-linux-x86_64.tar.gz",
-                        latest_ver
-                    );
-                    let download_url = val["tarball_url"].as_str().unwrap_or(&default_url).to_string();
-
-                    let has_update = is_version_greater(&latest_ver, &current_version);
-
-                    return Ok(AppUpdateInfo {
-                        has_update,
-                        current_version: current_version.clone(),
-                        latest_version: latest_ver,
-                        release_notes,
-                        published_at,
-                        download_url,
-                    });
-                }
-            }
-        }
+fn run_curl(args: &[&str]) -> Result<Vec<u8>, String> {
+    let out = std::process::Command::new("curl")
+        .args(["-fsSL", "--proto", "=https", "--tlsv1.2", "--connect-timeout", "10"])
+        .args(args)
+        .output()
+        .map_err(|e| format!("Failed to run curl: {}", e))?;
+    if !out.status.success() {
+        return Err("Download failed. Please check your internet connection.".to_string());
     }
+    Ok(out.stdout)
+}
 
-    Ok(AppUpdateInfo {
-        has_update: false,
-        current_version: current_version.clone(),
-        latest_version: current_version,
-        release_notes: String::new(),
-        published_at: String::new(),
-        download_url: String::new(),
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Finds the expected checksum for `file_name` in a `sha256sum`-style listing.
+fn find_checksum(sums: &str, file_name: &str) -> Option<String> {
+    sums.lines().find_map(|line| {
+        let mut parts = line.split_whitespace();
+        let hash = parts.next()?;
+        let name = parts.next()?.trim_start_matches('*');
+        (name == file_name && hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
+            .then(|| hash.to_lowercase())
     })
 }
 
-#[tauri::command]
-pub fn install_app_update(download_url: Option<String>) -> Result<String, String> {
-    let url = download_url.unwrap_or_else(|| {
-        format!("https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-{}-linux-x86_64.tar.gz", env!("CARGO_PKG_VERSION"))
-    });
+#[tauri::command(async)]
+pub fn check_app_update() -> Result<AppUpdateInfo, String> {
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let no_update = |current: String| AppUpdateInfo {
+        has_update: false,
+        current_version: current.clone(),
+        latest_version: current,
+        release_notes: String::new(),
+        published_at: String::new(),
+        download_url: String::new(),
+    };
 
-    // Security Guard: Validate update package URL origin against official trusted endpoints
-    let is_trusted_url = url.starts_with("https://github.com/leodarshantech/lyncost/")
-        || url.starts_with("https://raw.githubusercontent.com/leodarshantech/lyncost/");
-    if !is_trusted_url {
+    // The in-app updater installs the Linux tarball into ~/.local/bin; other
+    // platforms update through their own installers.
+    if !cfg!(target_os = "linux") {
+        return Ok(no_update(current_version));
+    }
+
+    let body = match run_curl(&[
+        "--max-time",
+        "8",
+        "https://raw.githubusercontent.com/leodarshantech/lyncost/main/version.json",
+    ]) {
+        Ok(b) => b,
+        Err(_) => return Ok(no_update(current_version)),
+    };
+
+    let val: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => return Ok(no_update(current_version)),
+    };
+
+    let latest_ver = val["version"].as_str().unwrap_or(&current_version).to_string();
+    let release_notes = val["notes"].as_str().unwrap_or("Performance improvements and bug fixes.").to_string();
+    let published_at = val["release_date"].as_str().unwrap_or("").to_string();
+    let default_url = format!(
+        "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-{}-linux-x86_64.tar.gz",
+        latest_ver
+    );
+    let download_url = val["tarball_url"].as_str().unwrap_or(&default_url).to_string();
+
+    if !is_trusted_update_url(&download_url) {
+        return Ok(no_update(current_version));
+    }
+
+    Ok(AppUpdateInfo {
+        has_update: is_version_greater(&latest_ver, &current_version),
+        current_version,
+        latest_version: latest_ver,
+        release_notes,
+        published_at,
+        download_url,
+    })
+}
+
+#[tauri::command(async)]
+pub fn install_app_update(download_url: Option<String>) -> Result<String, String> {
+    if !cfg!(target_os = "linux") {
+        return Err("In-app updates are only available on Linux. Please download the latest installer from the website.".to_string());
+    }
+
+    let url = download_url.ok_or_else(|| "No update package URL provided".to_string())?;
+    if !is_trusted_update_url(&url) {
         return Err("Untrusted update source. Update binaries must originate from the verified official repository.".to_string());
     }
+
+    let file_name = url
+        .rsplit('/')
+        .next()
+        .filter(|n| n.ends_with(".tar.gz"))
+        .ok_or_else(|| "Update URL does not point to a .tar.gz package".to_string())?
+        .to_string();
+    let sums_url = format!("{}SHA256SUMS", &url[..url.len() - file_name.len()]);
 
     let home = std::env::var("HOME").map_err(|_| "Could not find HOME directory".to_string())?;
     let target_bin_dir = PathBuf::from(&home).join(".local/bin");
     let target_bin = target_bin_dir.join("lyncost");
-    let temp_dir = PathBuf::from("/tmp/lyncost_update_staging");
 
-    if temp_dir.exists() {
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-    fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp directory: {}", e))?;
-
-    let tar_file = temp_dir.join("package.tar.gz");
-
-    let curl_status = std::process::Command::new("curl")
-        .arg("-fsSL")
-        .arg("--connect-timeout")
-        .arg("10")
-        .arg(&url)
-        .arg("-o")
-        .arg(&tar_file)
-        .status()
-        .map_err(|e| format!("Failed to download update: {}", e))?;
-
-    if !curl_status.success() {
-        let _ = fs::remove_dir_all(&temp_dir);
-        return Err("Failed to download update package. Please verify network connection.".to_string());
-    }
-
-    let tar_status = std::process::Command::new("tar")
-        .arg("-xzf")
-        .arg(&tar_file)
-        .arg("-C")
-        .arg(&temp_dir)
-        .status()
-        .map_err(|e| format!("Failed to extract update package: {}", e))?;
-
-    if !tar_status.success() {
-        let _ = fs::remove_dir_all(&temp_dir);
-        return Err("Failed to extract update archive".to_string());
-    }
-
-    let mut extracted_bin = temp_dir.join("lyncost");
-    if !extracted_bin.exists() {
-        if let Ok(entries) = fs::read_dir(&temp_dir) {
-            for entry in entries.flatten() {
-                let candidate = entry.path().join("lyncost");
-                if candidate.exists() {
-                    extracted_bin = candidate;
-                    break;
-                }
-            }
-        }
-    }
-
-    if !extracted_bin.exists() {
-        let _ = fs::remove_dir_all(&temp_dir);
-        return Err("Extracted package is missing 'lyncost' executable".to_string());
-    }
-
-    fs::create_dir_all(&target_bin_dir).map_err(|e| format!("Failed to ensure ~/.local/bin exists: {}", e))?;
-
-    let staging_bin = target_bin_dir.join("lyncost.new");
-    fs::copy(&extracted_bin, &staging_bin).map_err(|e| format!("Failed to stage binary: {}", e))?;
-
+    // Private, per-run staging directory inside the user's own cache (not a
+    // predictable shared /tmp path another local user could pre-create).
+    let cache_root = PathBuf::from(&home).join(".cache/lyncost");
+    fs::create_dir_all(&cache_root).map_err(|e| format!("Failed to create cache directory: {}", e))?;
+    let temp_dir = cache_root.join(format!("update-{}-{}", std::process::id(), now_unix()));
+    fs::create_dir(&temp_dir).map_err(|e| format!("Failed to create staging directory: {}", e))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&staging_bin, fs::Permissions::from_mode(0o755));
+        let _ = fs::set_permissions(&temp_dir, fs::Permissions::from_mode(0o700));
     }
 
-    fs::rename(&staging_bin, &target_bin).map_err(|e| format!("Failed to replace lyncost executable: {}", e))?;
+    let result = (|| -> Result<String, String> {
+        // 1. Download package + checksum list, verify integrity before extracting
+        let package = run_curl(&["--max-time", "300", &url])?;
+        let sums = run_curl(&["--max-time", "20", &sums_url])
+            .map_err(|_| "Could not download SHA256SUMS to verify the update. Update aborted for safety.".to_string())?;
+        let sums = String::from_utf8_lossy(&sums);
+        let expected = find_checksum(&sums, &file_name)
+            .ok_or_else(|| format!("No checksum published for {}. Update aborted for safety.", file_name))?;
+        let actual = sha256_hex(&package);
+        if actual != expected {
+            return Err("Update package failed checksum verification (file corrupted or tampered). Update aborted.".to_string());
+        }
+
+        let tar_file = temp_dir.join("package.tar.gz");
+        fs::write(&tar_file, &package).map_err(|e| format!("Failed to save update package: {}", e))?;
+
+        // 2. Extract (no absolute paths / ownership from the archive)
+        let tar_status = std::process::Command::new("tar")
+            .arg("--no-same-owner")
+            .arg("-xzf")
+            .arg(&tar_file)
+            .arg("-C")
+            .arg(&temp_dir)
+            .status()
+            .map_err(|e| format!("Failed to extract update package: {}", e))?;
+        if !tar_status.success() {
+            return Err("Failed to extract update archive".to_string());
+        }
+
+        let mut extracted_bin = temp_dir.join("lyncost");
+        if !extracted_bin.is_file() {
+            if let Ok(entries) = fs::read_dir(&temp_dir) {
+                for entry in entries.flatten() {
+                    let candidate = entry.path().join("lyncost");
+                    if candidate.is_file() {
+                        extracted_bin = candidate;
+                        break;
+                    }
+                }
+            }
+        }
+        if !extracted_bin.is_file() {
+            return Err("Extracted package is missing 'lyncost' executable".to_string());
+        }
+
+        // 3. Atomic replace of the installed binary
+        fs::create_dir_all(&target_bin_dir).map_err(|e| format!("Failed to ensure ~/.local/bin exists: {}", e))?;
+        let staging_bin = target_bin_dir.join("lyncost.new");
+        fs::copy(&extracted_bin, &staging_bin).map_err(|e| format!("Failed to stage binary: {}", e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&staging_bin, fs::Permissions::from_mode(0o755))
+                .map_err(|e| format!("Failed to mark binary executable: {}", e))?;
+        }
+        fs::rename(&staging_bin, &target_bin).map_err(|e| format!("Failed to replace lyncost executable: {}", e))?;
+
+        Ok("Update installed successfully!".to_string())
+    })();
 
     let _ = fs::remove_dir_all(&temp_dir);
-
-    Ok("Update installed successfully!".to_string())
+    result
 }
 
 #[tauri::command]
@@ -4924,7 +5093,7 @@ pub fn restart_application(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_payment_methods(state: State<'_, AppState>) -> Result<Vec<PaymentMethodItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let mut stmt = conn
         .prepare(
             "SELECT id, name, type_key, currency, icon, color, is_default, is_active, created_at
@@ -4959,7 +5128,7 @@ pub fn create_payment_method(
     state: State<'_, AppState>,
     payload: CreatePaymentMethodPayload,
 ) -> Result<i64, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let name = payload.name.trim();
     if name.is_empty() {
         return Err("Payment method name cannot be empty".to_string());
@@ -4990,7 +5159,7 @@ pub fn update_payment_method(
     id: i64,
     payload: UpdatePaymentMethodPayload,
 ) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let name = payload.name.trim();
     if name.is_empty() {
         return Err("Payment method name cannot be empty".to_string());
@@ -5018,7 +5187,7 @@ pub fn update_payment_method(
 
 #[tauri::command]
 pub fn delete_payment_method(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     conn.execute("DELETE FROM payment_methods WHERE id = ?1", params![id])
         .map_err(|e| format!("Failed to delete payment method: {}", e))?;
     Ok(())
@@ -5029,7 +5198,7 @@ pub fn apply_regional_payment_presets(
     state: State<'_, AppState>,
     currency: String,
 ) -> Result<Vec<PaymentMethodItem>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = state.conn();
     let curr = currency.trim().to_uppercase();
 
     // Define presets by currency
@@ -5125,3 +5294,111 @@ pub fn apply_regional_payment_presets(
     get_payment_methods(state)
 }
 
+
+// --- File Export ---
+
+/// Saves exported text (CSV reports, transaction exports) into the user's
+/// Downloads folder. Browser-style `<a download>` links are unreliable inside
+/// the desktop webview, so exports go through the backend instead.
+#[tauri::command(async)]
+pub fn save_export_file(app: AppHandle, file_name: String, contents: String) -> Result<String, String> {
+    let safe_name: String = file_name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
+        .collect();
+    let safe_name = safe_name.trim_start_matches('.').to_string();
+    if safe_name.is_empty() || safe_name.len() > 200 {
+        return Err("Invalid export file name".to_string());
+    }
+
+    let dir = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| format!("Could not find a folder to save into: {}", e))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {:?}: {}", dir, e))?;
+
+    // Never overwrite an existing file: report.csv -> report (1).csv
+    let path = Path::new(&safe_name);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("export").to_string();
+    let ext = path.extension().and_then(|s| s.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
+    let mut dest = dir.join(&safe_name);
+    let mut n = 1;
+    while dest.exists() {
+        dest = dir.join(format!("{} ({}){}", stem, n, ext));
+        n += 1;
+    }
+
+    fs::write(&dest, contents.as_bytes()).map_err(|e| format!("Failed to save {:?}: {}", dest, e))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db_with_pin(pin: &str) -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations(&mut conn).unwrap();
+        let hash = bcrypt::hash(pin, 4).unwrap();
+        conn.execute("UPDATE app_settings SET pin_hash = ?1 WHERE id = 1", params![hash]).unwrap();
+        conn
+    }
+
+    #[test]
+    fn pin_lockout_escalates_and_persists() {
+        let conn = db_with_pin("123456");
+
+        for expected_remaining in (1..5).rev() {
+            let r = check_pin_with_lockout(&conn, "000000").unwrap();
+            assert!(!r.valid);
+            assert_eq!(r.remaining_attempts, expected_remaining);
+            assert_eq!(r.lockout_seconds, 0);
+        }
+
+        let fifth = check_pin_with_lockout(&conn, "000000").unwrap();
+        assert_eq!(fifth.lockout_seconds, 30);
+
+        // While locked, even the correct PIN is refused
+        let locked = check_pin_with_lockout(&conn, "123456").unwrap();
+        assert!(!locked.valid);
+        assert!(locked.lockout_seconds > 0);
+
+        // After the lock expires, the next failure doubles the wait
+        conn.execute("UPDATE app_settings SET pin_locked_until = 0", []).unwrap();
+        let sixth = check_pin_with_lockout(&conn, "000000").unwrap();
+        assert_eq!(sixth.lockout_seconds, 60);
+
+        // Correct PIN resets the counter
+        conn.execute("UPDATE app_settings SET pin_locked_until = 0", []).unwrap();
+        assert!(check_pin_with_lockout(&conn, "123456").unwrap().valid);
+        let failed: i64 = conn.query_row("SELECT failed_pin_attempts FROM app_settings", [], |r| r.get(0)).unwrap();
+        assert_eq!(failed, 0);
+    }
+
+    #[test]
+    fn pin_rejects_non_digit_input_without_hashing() {
+        let conn = db_with_pin("123456");
+        assert!(!check_pin_with_lockout(&conn, "12345a").unwrap().valid);
+    }
+
+    #[test]
+    fn checksum_lookup_matches_exact_file_name() {
+        let sums = "d3c7449f2263ba265295dfd994595acfd47720897453fc1ecb199a338ccc1924  lyncost-0.1.6-linux-x86_64.tar.gz\n\
+                    4d615b508ff4c8083ae83e25e9a5ac4963af6817b134ff2be877f26d884b5312  Lyncost_0.1.6_x64-setup.exe";
+        assert_eq!(
+            find_checksum(sums, "lyncost-0.1.6-linux-x86_64.tar.gz").as_deref(),
+            Some("d3c7449f2263ba265295dfd994595acfd47720897453fc1ecb199a338ccc1924")
+        );
+        assert_eq!(find_checksum(sums, "lyncost-0.1.6-linux-x86_64.tar"), None);
+        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn update_urls_must_come_from_official_repo() {
+        assert!(is_trusted_update_url("https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/x.tar.gz"));
+        assert!(!is_trusted_update_url("https://raw.githubusercontent.com/leodarshantech/lyncost-evil/main/x.tar.gz"));
+        assert!(!is_trusted_update_url("https://raw.githubusercontent.com/leodarshantech/lyncost/../evil/x.tar.gz"));
+        assert!(!is_trusted_update_url("http://github.com/leodarshantech/lyncost/x.tar.gz"));
+    }
+}

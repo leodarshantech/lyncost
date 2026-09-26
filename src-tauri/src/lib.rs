@@ -10,18 +10,30 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let db_path = db::get_db_path(app.handle())
-                .expect("Failed to determine database storage path");
-            let conn = db::init_database(&db_path)
-                .expect("Failed to initialize database and migrations");
+            // Never panic here: a failed migration rolls back and leaves the user's data
+            // intact, so show the error in the UI instead of silently crashing on launch.
+            let opened = db::get_db_path(app.handle())
+                .and_then(|db_path| db::init_database(&db_path));
+
+            let (conn, startup_error) = match opened {
+                Ok(conn) => (conn, None),
+                Err(e) => {
+                    eprintln!("[lyncost] database startup failed: {}", e);
+                    let placeholder = rusqlite::Connection::open_in_memory()
+                        .map_err(|err| format!("Failed to open placeholder database: {}", err))?;
+                    (placeholder, Some(e))
+                }
+            };
 
             app.manage(db::AppState {
                 db: Mutex::new(conn),
+                startup_error,
             });
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::get_startup_status,
             commands::get_app_settings,
             commands::set_initial_pin,
             commands::verify_pin,
@@ -118,6 +130,7 @@ pub fn run() {
             commands::update_payment_method,
             commands::delete_payment_method,
             commands::apply_regional_payment_presets,
+            commands::save_export_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
