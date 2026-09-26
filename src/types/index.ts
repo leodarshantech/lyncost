@@ -665,6 +665,13 @@ export interface ChangePinPayload {
   new_pin: string;
 }
 
+export interface PinVerifyResult {
+  valid: boolean;
+  /** Seconds until another attempt is allowed (0 = not locked). */
+  lockout_seconds: number;
+  remaining_attempts: number;
+}
+
 export interface AppUpdateInfo {
   has_update: boolean;
   current_version: string;

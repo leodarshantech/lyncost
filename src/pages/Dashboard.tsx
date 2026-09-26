@@ -31,7 +31,7 @@ import {
   YAxis,
   Tooltip as RechartsTooltip,
 } from 'recharts';
-import { formatIndianDate, formatIndianCurrency } from '../lib/utils';
+import { formatIndianDate, formatIndianCurrency, toLocalDateString } from '../lib/utils';
 
 export const Dashboard: React.FC = () => {
   const accounts = useAppStore(state => state.accounts);
@@ -128,7 +128,7 @@ export const Dashboard: React.FC = () => {
     // Fallback if no snapshots yet: show current
     return [
       {
-        date: new Date().toISOString().slice(0, 10),
+        date: toLocalDateString(),
         net_worth: netWorthSummary?.net_worth ?? 0,
       },
     ];
@@ -726,7 +726,7 @@ export const Dashboard: React.FC = () => {
               const now = new Date();
               const in30Days = new Date();
               in30Days.setDate(now.getDate() + 30);
-              const in30DaysStr = in30Days.toISOString().split('T')[0];
+              const in30DaysStr = toLocalDateString(in30Days);
 
               const upcoming30 = bills
                 .filter((b) => b.is_paid === 0 && b.due_date <= in30DaysStr)

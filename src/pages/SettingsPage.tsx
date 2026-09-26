@@ -535,7 +535,7 @@ export const SettingsPage: React.FC = () => {
     setIsRestoring(true);
     try {
       await restoreBackup(selectedBackupForRestore);
-      alert('Database restored successfully from backup!');
+      alert('Database restored successfully from backup!\n\nA safety copy of your previous data was saved in the backups list (lyncost_pre_restore_…).');
       setSelectedBackupForRestore(null);
     } catch (err: unknown) {
       alert(`Restore failed: ${err instanceof Error ? err.message : String(err)}`);

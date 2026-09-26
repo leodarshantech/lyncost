@@ -16,7 +16,7 @@ import {
   RotateCcw,
   Info,
 } from 'lucide-react';
-import { formatIndianDate, formatIndianCurrency } from '../lib/utils';
+import { formatIndianDate, formatIndianCurrency, toLocalDateString } from '../lib/utils';
 
 export const BillsPage: React.FC = () => {
   const bills = useAppStore(state => state.bills);
@@ -36,7 +36,7 @@ export const BillsPage: React.FC = () => {
   // Form State
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
-  const [dueDate, setDueDate] = useState(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+  const [dueDate, setDueDate] = useState(toLocalDateString());
   const [accountId, setAccountId] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [recurrence, setRecurrence] = useState<BillRecurrence>('none');
@@ -61,7 +61,7 @@ export const BillsPage: React.FC = () => {
     setEditingBill(null);
     setName('');
     setAmount('');
-    setDueDate(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+    setDueDate(toLocalDateString());
     setAccountId(activeAccounts[0]?.id || null);
     setCategoryId(null);
     setRecurrence('none');

@@ -135,7 +135,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
     }
     setIsFinishing(true);
     try {
-      const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+      const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
       // 1. Set Currency & Number format
       if (isTauri) {

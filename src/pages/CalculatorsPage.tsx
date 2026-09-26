@@ -8,7 +8,7 @@ import {
   ArrowRight,
   CheckCircle2,
 } from 'lucide-react';
-import { formatIndianCurrency } from '../lib/utils';
+import { formatIndianCurrency, toLocalDateString } from '../lib/utils';
 
 export const CalculatorsPage: React.FC = () => {
   const settings = useAppStore(state => state.settings);
@@ -86,7 +86,7 @@ export const CalculatorsPage: React.FC = () => {
         principal: loanAmount,
         current_balance: loanAmount,
         interest_rate: interestRate,
-        due_date: new Date(Date.now() + totalTenureMonths * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        due_date: toLocalDateString(new Date(Date.now() + totalTenureMonths * 30 * 24 * 60 * 60 * 1000)),
         notes: `Monthly EMI: ${formatIndianCurrency(emi, baseCurrency)} over ${totalTenureMonths} months`,
       });
       setDebtSaved(true);

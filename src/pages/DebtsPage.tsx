@@ -24,7 +24,7 @@ import {
   Briefcase,
   PiggyBank,
 } from 'lucide-react';
-import { formatCurrency, formatDate } from '../lib/utils';
+import { formatCurrency, formatDate, toLocalDateString } from '../lib/utils';
 import {
   CreateDebtPayload,
   DebtItem,
@@ -136,7 +136,7 @@ export const DebtsPage: React.FC = () => {
     notes: string;
   }>({
     amount: '',
-    txn_date: new Date().toISOString().split('T')[0],
+    txn_date: toLocalDateString(),
     link_account: true,
     account_id: '',
     notes: '',
@@ -151,7 +151,7 @@ export const DebtsPage: React.FC = () => {
     notes: string;
   }>({
     amount: '',
-    txn_date: new Date().toISOString().split('T')[0],
+    txn_date: toLocalDateString(),
     deposit_to_account: true,
     account_id: '',
     notes: '',
@@ -165,7 +165,7 @@ export const DebtsPage: React.FC = () => {
     notes: string;
   }>({
     amount: '',
-    txn_date: new Date().toISOString().split('T')[0],
+    txn_date: toLocalDateString(),
     category_id: '',
     notes: '',
   });
@@ -405,7 +405,7 @@ export const DebtsPage: React.FC = () => {
 
     setPaymentForm({
       amount: suggestedAmount > 0 ? suggestedAmount : '',
-      txn_date: new Date().toISOString().split('T')[0],
+      txn_date: toLocalDateString(),
       link_account: activeAccounts.length > 0,
       account_id: activeAccounts.length > 0 ? activeAccounts[0].id : '',
       notes: '',
@@ -449,7 +449,7 @@ export const DebtsPage: React.FC = () => {
     const available = Math.max(0, debt.principal - debt.current_balance);
     setDrawForm({
       amount: available > 0 ? available : '',
-      txn_date: new Date().toISOString().split('T')[0],
+      txn_date: toLocalDateString(),
       deposit_to_account: activeAccounts.length > 0,
       account_id: activeAccounts.length > 0 ? activeAccounts[0].id : '',
       notes: '',
@@ -492,7 +492,7 @@ export const DebtsPage: React.FC = () => {
     setSpendModalDebt(debt);
     setSpendForm({
       amount: '',
-      txn_date: new Date().toISOString().split('T')[0],
+      txn_date: toLocalDateString(),
       category_id: expenseCategories.length > 0 ? expenseCategories[0].id : '',
       notes: '',
     });
