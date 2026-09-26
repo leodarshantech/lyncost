@@ -136,6 +136,7 @@ interface AppStoreState {
   setPin: (pin: string) => Promise<void>;
   unlockApp: (pin: string) => Promise<boolean>;
   lockApp: () => void;
+  loadAllCollections: () => Promise<void>;
   wipeData: () => Promise<void>;
 
   // Settings & Security
@@ -392,30 +393,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
       // No PIN configured - auto unlock and populate data
       set({ isUnlocked: true });
-      await get().processRecurringRules();
-      await get().checkAndSnapshotNetWorth();
-      await get().checkAndRunDailyBackup();
-      await Promise.all([
-        get().loadAccounts(false),
-        get().loadCategories(),
-        get().loadTags(),
-        get().loadTransactions(),
-        get().loadRecurringRules(),
-        get().loadMonthSummary(),
-        get().loadBudgets(),
-        get().loadGoals(),
-        get().loadBills(),
-        get().checkDueReminders(),
-        get().loadShoppingItems(),
-        get().loadWarranties(),
-        get().loadHoldings(),
-        get().loadPortfolioSummary(),
-        get().loadExchangeRates(),
-        get().loadDebts(),
-        get().loadNetWorthSummary(),
-        get().loadNetWorthHistory(),
-        get().loadPaymentMethods(),
-      ]);
+      await get().loadAllCollections();
       set({ isLoading: false });
       // Quietly check for app updates in background
       get().checkForAppUpdate();
@@ -427,38 +405,41 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }
   },
 
+  loadAllCollections: async () => {
+    // Run recurring rules catchup and load initial collections
+    await get().processRecurringRules();
+    await get().checkAndSnapshotNetWorth();
+    await get().checkAndRunDailyBackup();
+    await Promise.all([
+      get().loadAccounts(false),
+      get().loadCategories(),
+      get().loadTags(),
+      get().loadTransactions(),
+      get().loadRecurringRules(),
+      get().loadMonthSummary(),
+      get().loadBudgets(),
+      get().loadGoals(),
+      get().loadBills(),
+      get().checkDueReminders(),
+      get().loadShoppingItems(),
+      get().loadWarranties(),
+      get().loadHoldings(),
+      get().loadPortfolioSummary(),
+      get().loadExchangeRates(),
+      get().loadDebts(),
+      get().loadNetWorthSummary(),
+      get().loadNetWorthHistory(),
+      get().loadPaymentMethods(),
+    ]);
+  },
+
   setPin: async (pin: string) => {
     set({ error: null });
     try {
       await invoke('set_initial_pin', { pin });
       const updatedSettings = await invoke<AppSettings>('get_app_settings');
       set({ settings: updatedSettings, isUnlocked: true });
-
-      // Run recurring rules catchup and load initial collections
-      await get().processRecurringRules();
-      await get().checkAndSnapshotNetWorth();
-      await get().checkAndRunDailyBackup();
-      await Promise.all([
-        get().loadAccounts(false),
-        get().loadCategories(),
-        get().loadTags(),
-        get().loadTransactions(),
-        get().loadRecurringRules(),
-        get().loadMonthSummary(),
-        get().loadBudgets(),
-        get().loadGoals(),
-        get().loadBills(),
-        get().checkDueReminders(),
-        get().loadShoppingItems(),
-        get().loadWarranties(),
-        get().loadHoldings(),
-        get().loadPortfolioSummary(),
-        get().loadExchangeRates(),
-        get().loadDebts(),
-        get().loadNetWorthSummary(),
-        get().loadNetWorthHistory(),
-        get().loadPaymentMethods(),
-      ]);
+      await get().loadAllCollections();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       set({ error: msg });
@@ -472,33 +453,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       const valid = await invoke<boolean>('verify_pin', { pin });
       if (valid) {
         set({ isUnlocked: true });
-
-        // Run recurring rules generation catch-up on every launch (AGENTS.md Section 5.3)
-        await get().processRecurringRules();
-        await get().checkAndSnapshotNetWorth();
-        await get().checkAndRunDailyBackup();
-
-        await Promise.all([
-          get().loadAccounts(false),
-          get().loadCategories(),
-          get().loadTags(),
-          get().loadTransactions(),
-          get().loadRecurringRules(),
-          get().loadMonthSummary(),
-          get().loadBudgets(),
-          get().loadGoals(),
-          get().loadBills(),
-          get().checkDueReminders(),
-          get().loadShoppingItems(),
-          get().loadWarranties(),
-          get().loadHoldings(),
-          get().loadPortfolioSummary(),
-          get().loadExchangeRates(),
-          get().loadDebts(),
-          get().loadNetWorthSummary(),
-          get().loadNetWorthHistory(),
-          get().loadPaymentMethods(),
-        ]);
+        await get().loadAllCollections();
         return true;
       } else {
         set({ error: 'Incorrect PIN. Please try again.' });

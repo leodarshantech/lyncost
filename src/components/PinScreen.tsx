@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { AlertTriangle, Delete, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Delete, RefreshCw, ShieldAlert } from 'lucide-react';
 
 export const PinScreen: React.FC = () => {
   const settings = useAppStore(state => state.settings);
@@ -8,6 +8,7 @@ export const PinScreen: React.FC = () => {
   const unlockApp = useAppStore(state => state.unlockApp);
   const wipeData = useAppStore(state => state.wipeData);
   const error = useAppStore(state => state.error);
+  const theme = useAppStore(state => state.theme);
   
   const isInitialSetup = !settings?.has_pin;
 
@@ -19,18 +20,37 @@ export const PinScreen: React.FC = () => {
   const [wipeConfirmText, setWipeConfirmText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Use refs to avoid re-attaching listener on every keystroke
-  const stateRef = useRef({ pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen });
+  // Security features: Brute-force rate limiting & shake feedback
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [isShaking, setIsShaking] = useState(false);
+
   useEffect(() => {
-    stateRef.current = { pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen };
-  }, [pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen]);
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
+
+  // Use refs to avoid re-attaching listener on every keystroke
+  const stateRef = useRef({ pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen, lockoutSeconds });
+  useEffect(() => {
+    stateRef.current = { pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen, lockoutSeconds };
+  }, [pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen, lockoutSeconds]);
 
   // Handle keyboard inputs
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const { pin: currentPin, confirmPin: currentConfirmPin, setupStep: currentSetupStep, isInitialSetup: currentIsInitialSetup, isWipeModalOpen: currentIsWipeModalOpen } = stateRef.current;
+      const { pin: currentPin, confirmPin: currentConfirmPin, setupStep: currentSetupStep, isInitialSetup: currentIsInitialSetup, isWipeModalOpen: currentIsWipeModalOpen, lockoutSeconds: currentLockout } = stateRef.current;
       
-      if (currentIsWipeModalOpen) return;
+      if (currentIsWipeModalOpen || currentLockout > 0) return;
 
       if (e.key >= '0' && e.key <= '9') {
         appendDigit(e.key);
@@ -53,6 +73,7 @@ export const PinScreen: React.FC = () => {
   }, []);
 
   const appendDigit = (digit: string) => {
+    if (lockoutSeconds > 0) return;
     setLocalError(null);
     if (isInitialSetup) {
       if (setupStep === 'create') {
@@ -84,6 +105,7 @@ export const PinScreen: React.FC = () => {
   };
 
   const handleBackspace = () => {
+    if (lockoutSeconds > 0) return;
     setLocalError(null);
     if (isInitialSetup) {
       if (setupStep === 'create') {
@@ -97,6 +119,7 @@ export const PinScreen: React.FC = () => {
   };
 
   const handleClear = () => {
+    if (lockoutSeconds > 0) return;
     setLocalError(null);
     if (isInitialSetup) {
       if (setupStep === 'confirm') {
@@ -110,14 +133,27 @@ export const PinScreen: React.FC = () => {
   };
 
   const handleCompleteUnlock = async (enteredPin: string) => {
+    if (lockoutSeconds > 0) return;
     setIsProcessing(true);
     const ok = await unlockApp(enteredPin);
     setIsProcessing(false);
     if (!ok) {
       setPinState('');
+      setIsShaking(true);
+      setTimeout(() => setIsShaking(false), 450);
+      const nextFailures = failedAttempts + 1;
+      setFailedAttempts(nextFailures);
+      if (nextFailures >= 5) {
+        setLockoutSeconds(30);
+        setLocalError('Too many failed attempts. Security cooldown active for 30 seconds.');
+      } else {
+        setLocalError(`Incorrect PIN. ${5 - nextFailures} attempt${5 - nextFailures === 1 ? '' : 's'} remaining.`);
+      }
+    } else {
+      setFailedAttempts(0);
+      setLockoutSeconds(0);
     }
   };
-
 
   const handleUnlockRef = async (currentPin: string) => {
     if (currentPin.length === 6) {
@@ -182,18 +218,24 @@ export const PinScreen: React.FC = () => {
     : pin.length;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4 select-none text-zinc-100">
-      <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl flex flex-col items-center">
+    <div className={`min-h-screen flex items-center justify-center p-4 select-none transition-colors duration-200 ${
+      theme === 'light' ? 'bg-[#f8fafc] text-zinc-950' : 'bg-zinc-950 text-zinc-100'
+    }`}>
+      <div className={`w-full max-w-sm rounded-2xl p-8 shadow-2xl flex flex-col items-center border transition-all ${
+        theme === 'light'
+          ? 'bg-white border-slate-200 shadow-xl'
+          : 'bg-zinc-900 border-zinc-800 shadow-2xl'
+      }`}>
         {/* App Logo */}
         <div className="w-16 h-16 rounded-2xl overflow-hidden border border-emerald-500/30 flex items-center justify-center mb-5 shadow-lg shadow-emerald-950/40 bg-zinc-950">
           <img src="/logo-128.png" alt="Lyncost" className="w-full h-full object-cover" />
         </div>
 
-        <h1 className="text-2xl font-bold tracking-tight text-white mb-1">
+        <h1 className={`text-2xl font-bold tracking-tight mb-1 ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
           Lyncost
         </h1>
 
-        <p className="text-sm text-zinc-400 text-center mb-6">
+        <p className={`text-sm text-center mb-6 ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
           {isInitialSetup
             ? setupStep === 'create'
               ? 'Set your 6-digit Master PIN'
@@ -201,23 +243,33 @@ export const PinScreen: React.FC = () => {
             : 'Enter your 6-digit PIN to unlock'}
         </p>
 
-        {/* PIN Dots display */}
-        <div className="flex gap-3 mb-6">
+        {/* PIN Dots display with shake feedback on incorrect entry */}
+        <div className={`flex gap-3 mb-6 ${isShaking ? 'animate-shake' : ''}`}>
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <div
               key={i}
               className={`w-3.5 h-3.5 rounded-full transition-all duration-200 ${
                 i < currentLength
                   ? 'bg-purple-500 scale-110 shadow-sm shadow-purple-500/50'
+                  : theme === 'light'
+                  ? 'bg-slate-200 border border-slate-300'
                   : 'bg-zinc-800 border border-zinc-700'
               }`}
             />
           ))}
         </div>
 
+        {/* Security Lockout Banner */}
+        {lockoutSeconds > 0 && (
+          <div className="w-full mb-4 px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-500 dark:text-rose-300 text-xs text-center font-bold flex items-center justify-center gap-2 animate-pulse">
+            <ShieldAlert className="w-4 h-4 text-rose-500 shrink-0" />
+            <span>Lockout active. Try again in {lockoutSeconds}s</span>
+          </div>
+        )}
+
         {/* Error notice */}
-        {(localError || error) && (
-          <div className="w-full mb-4 px-3 py-2 rounded-lg bg-red-950/60 border border-red-900/60 text-red-400 text-xs text-center font-medium">
+        {lockoutSeconds === 0 && (localError || error) && (
+          <div className="w-full mb-4 px-3 py-2 rounded-xl bg-red-950/60 border border-red-900/60 text-red-400 text-xs text-center font-medium">
             {localError || error}
           </div>
         )}
@@ -228,9 +280,13 @@ export const PinScreen: React.FC = () => {
             <button
               key={num}
               type="button"
-              disabled={isProcessing}
+              disabled={isProcessing || lockoutSeconds > 0}
               onClick={() => appendDigit(num.toString())}
-              className="h-14 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 active:bg-zinc-600 text-white font-semibold text-xl border border-zinc-700/60 transition-all flex items-center justify-center cursor-pointer shadow-sm"
+              className={`h-14 rounded-xl font-semibold text-xl border transition-all flex items-center justify-center cursor-pointer shadow-sm active:scale-95 disabled:opacity-40 disabled:pointer-events-none ${
+                theme === 'light'
+                  ? 'bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-900 border-slate-200 shadow-xs'
+                  : 'bg-zinc-800/80 hover:bg-zinc-700 active:bg-zinc-600 text-white border-zinc-700/60'
+              }`}
             >
               {num}
             </button>
@@ -238,27 +294,39 @@ export const PinScreen: React.FC = () => {
 
           <button
             type="button"
-            disabled={isProcessing}
+            disabled={isProcessing || lockoutSeconds > 0}
             onClick={handleClear}
-            className="h-14 rounded-xl bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-700 text-zinc-400 font-medium text-xs border border-zinc-800 transition-all flex items-center justify-center cursor-pointer"
+            className={`h-14 rounded-xl font-medium text-xs border transition-all flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
+              theme === 'light'
+                ? 'bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-600 border-slate-200'
+                : 'bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-700 text-zinc-400 border-zinc-800'
+            }`}
           >
             CLEAR
           </button>
 
           <button
             type="button"
-            disabled={isProcessing}
+            disabled={isProcessing || lockoutSeconds > 0}
             onClick={() => appendDigit('0')}
-            className="h-14 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 active:bg-zinc-600 text-white font-semibold text-xl border border-zinc-700/60 transition-all flex items-center justify-center cursor-pointer shadow-sm"
+            className={`h-14 rounded-xl font-semibold text-xl border transition-all flex items-center justify-center cursor-pointer shadow-sm active:scale-95 disabled:opacity-40 disabled:pointer-events-none ${
+              theme === 'light'
+                ? 'bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-900 border-slate-200 shadow-xs'
+                : 'bg-zinc-800/80 hover:bg-zinc-700 active:bg-zinc-600 text-white border-zinc-700/60'
+            }`}
           >
             0
           </button>
 
           <button
             type="button"
-            disabled={isProcessing}
+            disabled={isProcessing || lockoutSeconds > 0}
             onClick={handleBackspace}
-            className="h-14 rounded-xl bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-700 text-zinc-400 border border-zinc-800 transition-all flex items-center justify-center cursor-pointer"
+            className={`h-14 rounded-xl border transition-all flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
+              theme === 'light'
+                ? 'bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-600 border-slate-200'
+                : 'bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-700 text-zinc-400 border-zinc-800'
+            }`}
           >
             <Delete className="w-5 h-5" />
           </button>

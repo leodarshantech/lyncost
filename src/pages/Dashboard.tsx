@@ -142,7 +142,7 @@ export const Dashboard: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <h2 className={`text-2xl font-bold tracking-tight ${theme === 'light' ? 'text-black' : 'text-white'}`}>Financial Dashboard</h2>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-500/20 text-purple-400 border border-purple-500/30">
-              v0.1.5
+              v0.1.6
             </span>
           </div>
           <p className="text-xs text-zinc-400 mt-1">
@@ -320,15 +320,17 @@ export const Dashboard: React.FC = () => {
       {/* Task 7: This Month's Income vs Expense (Confirmed Transactions) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Income */}
-        <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between">
+        <div className={`p-5 rounded-2xl border flex items-center justify-between ${
+          theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'
+        }`}>
           <div>
-            <span className="text-xs font-medium text-zinc-400 block">
+            <span className={`text-xs font-medium block ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
               This Month Income
             </span>
             <span className="text-2xl font-extrabold text-emerald-400 mt-1 block">
               +{formatCurrency(monthSummary?.total_income || 0)}
             </span>
-            <span className="text-[11px] text-zinc-500">Confirmed credits only</span>
+            <span className={`text-[11px] ${theme === 'light' ? 'text-slate-500' : 'text-zinc-500'}`}>Confirmed credits only</span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
             <ArrowUpRight className="w-5 h-5 text-emerald-400" />
@@ -336,15 +338,17 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Expense */}
-        <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between">
+        <div className={`p-5 rounded-2xl border flex items-center justify-between ${
+          theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'
+        }`}>
           <div>
-            <span className="text-xs font-medium text-zinc-400 block">
+            <span className={`text-xs font-medium block ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
               This Month Expense
             </span>
             <span className="text-2xl font-extrabold text-red-400 mt-1 block">
               -{formatCurrency(monthSummary?.total_expense || 0)}
             </span>
-            <span className="text-[11px] text-zinc-500">Confirmed debits only</span>
+            <span className={`text-[11px] ${theme === 'light' ? 'text-slate-500' : 'text-zinc-500'}`}>Confirmed debits only</span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
             <ArrowDownLeft className="w-5 h-5 text-red-400" />
@@ -352,9 +356,11 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Net Cash Flow */}
-        <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between">
+        <div className={`p-5 rounded-2xl border flex items-center justify-between ${
+          theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'
+        }`}>
           <div>
-            <span className="text-xs font-medium text-zinc-400 block">
+            <span className={`text-xs font-medium block ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
               Net Cash Flow
             </span>
             <span
@@ -367,7 +373,7 @@ export const Dashboard: React.FC = () => {
               {(monthSummary?.net_cashflow || 0) >= 0 ? '+' : ''}
               {formatCurrency(monthSummary?.net_cashflow || 0)}
             </span>
-            <span className="text-[11px] text-zinc-500">
+            <span className={`text-[11px] ${theme === 'light' ? 'text-slate-500' : 'text-zinc-500'}`}>
               {(monthSummary?.net_cashflow || 0) >= 0 ? 'Surplus this month' : 'Deficit this month'}
             </span>
           </div>
@@ -401,11 +407,11 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div
           onClick={() => setActiveTab('accounts')}
-          className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between hover:border-zinc-700 transition-colors cursor-pointer"
+          className={`p-4 rounded-xl border flex items-center justify-between transition-colors cursor-pointer ${theme === 'light' ? 'bg-white border-slate-200 shadow-sm hover:border-purple-300' : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'}`}
         >
           <div>
             <p className="text-xs font-medium text-zinc-400">Bank Accounts</p>
-            <p className="text-lg font-bold text-white mt-1">
+            <p className={`text-lg font-bold mt-1 ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
               {formatCurrency(netWorthSummary?.total_bank || 0)}
             </p>
             <p className="text-[11px] text-zinc-500">
@@ -419,11 +425,11 @@ export const Dashboard: React.FC = () => {
 
         <div
           onClick={() => setActiveTab('accounts')}
-          className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between hover:border-zinc-700 transition-colors cursor-pointer"
+          className={`p-4 rounded-xl border flex items-center justify-between transition-colors cursor-pointer ${theme === 'light' ? 'bg-white border-slate-200 shadow-sm hover:border-purple-300' : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'}`}
         >
           <div>
             <p className="text-xs font-medium text-zinc-400">Cash Wallet</p>
-            <p className="text-lg font-bold text-white mt-1">
+            <p className={`text-lg font-bold mt-1 ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
               {formatCurrency(netWorthSummary?.total_cash || 0)}
             </p>
             <p className="text-[11px] text-zinc-500">
@@ -437,11 +443,11 @@ export const Dashboard: React.FC = () => {
 
         <div
           onClick={() => setActiveTab('investments')}
-          className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between hover:border-zinc-700 transition-colors cursor-pointer"
+          className={`p-4 rounded-xl border flex items-center justify-between transition-colors cursor-pointer ${theme === 'light' ? 'bg-white border-slate-200 shadow-sm hover:border-purple-300' : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'}`}
         >
           <div>
             <p className="text-xs font-medium text-zinc-400">Investments</p>
-            <p className="text-lg font-bold text-white mt-1">
+            <p className={`text-lg font-bold mt-1 ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
               {formatCurrency(netWorthSummary?.total_investments || 0)}
             </p>
             <p className="text-[11px] text-zinc-500">
@@ -455,7 +461,7 @@ export const Dashboard: React.FC = () => {
 
         <div
           onClick={() => setActiveTab('debts')}
-          className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between hover:border-zinc-700 transition-colors cursor-pointer"
+          className={`p-4 rounded-xl border flex items-center justify-between transition-colors cursor-pointer ${theme === 'light' ? 'bg-white border-slate-200 shadow-sm hover:border-purple-300' : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'}`}
         >
           <div>
             <p className="text-xs font-medium text-zinc-400">Debts & Liabilities</p>
@@ -479,9 +485,9 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Recent Transactions List */}
-      <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
+      <div className={`p-5 rounded-2xl border space-y-3 ${theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'}`}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Recent Transactions</h3>
+          <h3 className={`text-sm font-semibold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>Recent Transactions</h3>
           <button
             type="button"
             onClick={() => setActiveTab('transactions')}
@@ -562,9 +568,9 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Active Accounts Grid */}
-      <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-4">
+      <div className={`p-5 rounded-2xl border space-y-4 ${theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'}`}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Active Accounts</h3>
+          <h3 className={`text-sm font-semibold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>Active Accounts</h3>
           <button
             type="button"
             onClick={() => setActiveTab('accounts')}
@@ -587,7 +593,7 @@ export const Dashboard: React.FC = () => {
             {activeAccounts.map((account) => (
               <div
                 key={account.id}
-                className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800 hover:border-zinc-700 transition-all flex flex-col justify-between"
+                className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${theme === 'light' ? 'bg-slate-50 border-slate-200 hover:border-slate-300' : 'bg-zinc-950/60 border-zinc-800 hover:border-zinc-700'}`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -601,7 +607,7 @@ export const Dashboard: React.FC = () => {
                       {getAccountIcon(account.type)}
                     </div>
                     <div>
-                      <h4 className="text-sm font-semibold text-white">{account.name}</h4>
+                      <h4 className={`text-sm font-semibold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{account.name}</h4>
                       <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800">
                         {account.type.replace('_', ' ')}
                       </span>
@@ -629,10 +635,10 @@ export const Dashboard: React.FC = () => {
       {/* Financial Goals & Upcoming Bills (next 30 days) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Financial Goals Widget */}
-        <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-4 flex flex-col justify-between">
+        <div className={`p-5 rounded-2xl border space-y-4 flex flex-col justify-between ${theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'}`}>
           <div>
             <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
+              <div className={`flex items-center gap-2 text-xs font-bold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
                 <Target className="w-4 h-4 text-purple-400" />
                 <span>Financial Goals</span>
               </div>
@@ -664,7 +670,7 @@ export const Dashboard: React.FC = () => {
                   return (
                     <div key={g.id} className="space-y-1.5">
                       <div className="flex items-baseline justify-between text-xs">
-                        <div className="flex items-center gap-1.5 font-semibold text-white">
+                        <div className={`flex items-center gap-1.5 font-semibold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
                           <span>{g.name}</span>
                           {isReached && <Trophy className="w-3.5 h-3.5 text-amber-400" />}
                         </div>
@@ -700,10 +706,10 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Upcoming Bills Widget (Next 30 days) */}
-        <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-4 flex flex-col justify-between">
+        <div className={`p-5 rounded-2xl border space-y-4 flex flex-col justify-between ${theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'}`}>
           <div>
             <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
+              <div className={`flex items-center gap-2 text-xs font-bold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
                 <Receipt className="w-4 h-4 text-amber-400" />
                 <span>Upcoming Bills (Next 30 Days)</span>
               </div>
@@ -752,7 +758,7 @@ export const Dashboard: React.FC = () => {
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-white truncate block">{b.name}</span>
+                            <span className={`font-semibold truncate block ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{b.name}</span>
                             {isOverdue && (
                               <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-rose-500 text-white uppercase shrink-0">
                                 Overdue

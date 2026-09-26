@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import {
   Calculator,
@@ -28,6 +28,13 @@ export const CalculatorsPage: React.FC = () => {
   const [isTenureInMonths, setIsTenureInMonths] = useState<boolean>(false);
   const [loanName, setLoanName] = useState<string>('Home / Personal Loan');
   const [debtSaved, setDebtSaved] = useState<boolean>(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    };
+  }, []);
 
   const totalTenureMonths = isTenureInMonths ? Math.max(1, tenureYears) : Math.max(1, tenureYears * 12);
   const monthlyRate = interestRate / 12 / 100;
@@ -83,7 +90,8 @@ export const CalculatorsPage: React.FC = () => {
         notes: `Monthly EMI: ${formatIndianCurrency(emi, baseCurrency)} over ${totalTenureMonths} months`,
       });
       setDebtSaved(true);
-      setTimeout(() => setDebtSaved(false), 3000);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setDebtSaved(false), 3000);
     } catch (err) {
       console.error(err);
     }

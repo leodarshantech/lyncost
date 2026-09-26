@@ -96,7 +96,7 @@ export const FinancialHealthWidget: React.FC = () => {
   const gradeInfo = getGrade(score);
 
   return (
-    <div className={`p-5 rounded-2xl border transition-all ${
+    <div className={`p-5 rounded-2xl border transition-all h-full flex flex-col justify-between ${
       theme === 'light'
         ? 'bg-white border-slate-200 shadow-sm'
         : 'bg-[#0b0f19] border-zinc-850 shadow-md'
@@ -129,67 +129,91 @@ export const FinancialHealthWidget: React.FC = () => {
       {/* 4 Pillars of Health */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Savings Rate */}
-        <div className={`p-3 rounded-xl border ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] transition-all ${
           theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-zinc-900/70 border-zinc-800'
         }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase">Savings Rate</span>
-            <Percent className="w-3 h-3 text-emerald-400" />
+          <div className="h-6 flex items-center justify-between">
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
+              Savings Rate
+            </span>
+            <Percent className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           </div>
-          <span className="text-base sm:text-lg font-black font-mono text-emerald-400">
-            {savingsRate.toFixed(1)}%
-          </span>
-          <span className="text-[10px] text-zinc-500 block mt-0.5">
-            {savingsRate >= 30 ? 'High savings' : savingsRate >= 15 ? 'Moderate' : 'Low savings'}
-          </span>
+          <div className="my-1">
+            <span className="text-xl font-black font-mono tracking-tight text-emerald-400">
+              {savingsRate.toFixed(1)}%
+            </span>
+          </div>
+          <div className="h-4 flex items-center">
+            <span className={`text-[10px] font-medium truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-500'}`}>
+              {savingsRate >= 30 ? 'High savings' : savingsRate >= 15 ? 'Moderate' : 'Low savings'}
+            </span>
+          </div>
         </div>
 
         {/* Emergency Runway */}
-        <div className={`p-3 rounded-xl border ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] transition-all ${
           theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-zinc-900/70 border-zinc-800'
         }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase">Cash Runway</span>
-            <ShieldCheck className="w-3 h-3 text-blue-400" />
+          <div className="h-6 flex items-center justify-between">
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
+              Cash Runway
+            </span>
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
           </div>
-          <span className="text-base sm:text-lg font-black font-mono text-blue-400">
-            {runwayMonths.toFixed(1)} Mo
-          </span>
-          <span className="text-[10px] text-zinc-500 block mt-0.5">
-            {runwayMonths >= 6 ? 'Fortress buffer' : runwayMonths >= 3 ? 'Safe buffer' : 'Vulnerable buffer'}
-          </span>
+          <div className="my-1">
+            <span className="text-xl font-black font-mono tracking-tight text-blue-400">
+              {runwayMonths.toFixed(1)} <span className="text-xs font-bold font-sans">Mo</span>
+            </span>
+          </div>
+          <div className="h-4 flex items-center">
+            <span className={`text-[10px] font-medium truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-500'}`}>
+              {runwayMonths >= 6 ? 'Fortress buffer' : runwayMonths >= 3 ? 'Safe buffer' : 'Vulnerable buffer'}
+            </span>
+          </div>
         </div>
 
         {/* Debt Burden */}
-        <div className={`p-3 rounded-xl border ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] transition-all ${
           theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-zinc-900/70 border-zinc-800'
         }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase">Debt Burden</span>
-            <CreditCard className="w-3 h-3 text-rose-400" />
+          <div className="h-6 flex items-center justify-between">
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
+              Debt Burden
+            </span>
+            <CreditCard className="w-3.5 h-3.5 text-rose-400 shrink-0" />
           </div>
-          <span className="text-base sm:text-lg font-black font-mono text-rose-400">
-            {debtRatio.toFixed(1)}%
-          </span>
-          <span className="text-[10px] text-zinc-500 block mt-0.5">
-            {totalDebts === 0 ? 'Zero debt 👏' : debtRatio < 20 ? 'Low leverage' : 'High leverage'}
-          </span>
+          <div className="my-1">
+            <span className="text-xl font-black font-mono tracking-tight text-rose-400">
+              {debtRatio.toFixed(1)}%
+            </span>
+          </div>
+          <div className="h-4 flex items-center">
+            <span className={`text-[10px] font-medium truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-500'}`}>
+              {totalDebts === 0 ? 'Zero debt 👏' : debtRatio < 20 ? 'Low leverage' : 'High leverage'}
+            </span>
+          </div>
         </div>
 
         {/* Portfolio Allocation */}
-        <div className={`p-3 rounded-xl border ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] transition-all ${
           theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-zinc-900/70 border-zinc-800'
         }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase">Invested %</span>
-            <TrendingUp className="w-3 h-3 text-purple-400" />
+          <div className="h-6 flex items-center justify-between">
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
+              Invested %
+            </span>
+            <TrendingUp className="w-3.5 h-3.5 text-purple-400 shrink-0" />
           </div>
-          <span className="text-base sm:text-lg font-black font-mono text-purple-400">
-            {investmentRatio.toFixed(1)}%
-          </span>
-          <span className="text-[10px] text-zinc-500 block mt-0.5">
-            Of Total Net Worth
-          </span>
+          <div className="my-1">
+            <span className="text-xl font-black font-mono tracking-tight text-purple-400">
+              {investmentRatio.toFixed(1)}%
+            </span>
+          </div>
+          <div className="h-4 flex items-center">
+            <span className={`text-[10px] font-medium truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-500'}`}>
+              Of Total Net Worth
+            </span>
+          </div>
         </div>
       </div>
     </div>

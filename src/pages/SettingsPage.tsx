@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import {
   Settings as SettingsIcon,
@@ -122,6 +122,48 @@ export const SettingsPage: React.FC = () => {
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinSuccess, setPinSuccess] = useState<string | null>(null);
 
+  // Safe timeout tracking to prevent memory leaks on unmounted state updates
+  const timeoutsRef = useRef<number[]>([]);
+  const safeTimeout = React.useCallback((callback: () => void, ms: number) => {
+    const id = window.setTimeout(callback, ms);
+    timeoutsRef.current.push(id);
+    return id;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach((id) => clearTimeout(id));
+      timeoutsRef.current = [];
+    };
+  }, []);
+
+  // Security features: Auto-Lock & Window Blur Shield
+  const [autoLockMinutes, setAutoLockMinutes] = useState<number>(() => {
+    if (typeof window === 'undefined') return 5;
+    const saved = localStorage.getItem('lyncost_autolock_minutes');
+    return saved !== null ? parseInt(saved, 10) : 5;
+  });
+
+  const [blurOnUnfocus, setBlurOnUnfocus] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('lyncost_blur_on_unfocus') === 'true';
+  });
+
+  const handleChangeAutoLock = (mins: number) => {
+    setAutoLockMinutes(mins);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lyncost_autolock_minutes', String(mins));
+    }
+  };
+
+  const handleToggleBlurOnUnfocus = () => {
+    const next = !blurOnUnfocus;
+    setBlurOnUnfocus(next);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lyncost_blur_on_unfocus', String(next));
+    }
+  };
+
   // Windows License Key retrieval
   const [savedLicenseKey] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -134,7 +176,7 @@ export const SettingsPage: React.FC = () => {
     if (savedLicenseKey) {
       navigator.clipboard.writeText(savedLicenseKey);
       setCopiedLicenseKey(true);
-      setTimeout(() => setCopiedLicenseKey(false), 2000);
+      safeTimeout(() => setCopiedLicenseKey(false), 2000);
     }
   };
 
@@ -205,7 +247,7 @@ export const SettingsPage: React.FC = () => {
         notify_advance_days: notifyAdvanceDays,
       });
       setNotifyMessage({ type: 'success', text: 'Notification preferences saved successfully!' });
-      setTimeout(() => setNotifyMessage(null), 4000);
+      safeTimeout(() => setNotifyMessage(null), 4000);
     } catch (err: unknown) {
       setNotifyMessage({
         type: 'error',
@@ -221,14 +263,14 @@ export const SettingsPage: React.FC = () => {
     setNotifyMessage(null);
     try {
       await sendOsDesktopNotification(
-        'DhanKhata Bill Reminder',
+        'Lyncost Bill Reminder',
         '🔔 1-Day Advance Notice: Electricity bill (₹2,500.00) is due tomorrow!'
       );
       setNotifyMessage({
         type: 'success',
         text: 'Desktop notification sent! Check your notification tray / top bar.',
       });
-      setTimeout(() => setNotifyMessage(null), 4000);
+      safeTimeout(() => setNotifyMessage(null), 4000);
     } catch (err: unknown) {
       setNotifyMessage({
         type: 'error',
@@ -370,7 +412,7 @@ export const SettingsPage: React.FC = () => {
         setPaymentMethodNotice(`Created "${paymentMethodForm.name.trim()}"`);
       }
       setIsPaymentMethodModalOpen(false);
-      setTimeout(() => setPaymentMethodNotice(null), 3000);
+      safeTimeout(() => setPaymentMethodNotice(null), 3000);
     } catch (err: unknown) {
       setPaymentMethodError(err instanceof Error ? err.message : String(err));
     }
@@ -404,7 +446,7 @@ export const SettingsPage: React.FC = () => {
         is_active: 1,
       });
       setPaymentMethodNotice(`Set "${pm.name}" as default payment method`);
-      setTimeout(() => setPaymentMethodNotice(null), 3000);
+      safeTimeout(() => setPaymentMethodNotice(null), 3000);
     } catch (err) {
       alert(`Failed to set default: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -415,7 +457,7 @@ export const SettingsPage: React.FC = () => {
       try {
         await deletePaymentMethod(pm.id);
         setPaymentMethodNotice(`Deleted "${pm.name}"`);
-        setTimeout(() => setPaymentMethodNotice(null), 3000);
+        safeTimeout(() => setPaymentMethodNotice(null), 3000);
       } catch (err) {
         alert(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -427,7 +469,7 @@ export const SettingsPage: React.FC = () => {
     try {
       await applyRegionalPaymentPresets(cur);
       setPaymentMethodNotice(`Loaded recommended regional payment presets for ${cur}`);
-      setTimeout(() => setPaymentMethodNotice(null), 3500);
+      safeTimeout(() => setPaymentMethodNotice(null), 3500);
     } catch (err) {
       alert(`Failed to load presets: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -453,7 +495,7 @@ export const SettingsPage: React.FC = () => {
         new_pin: newPin,
       });
       setPinSuccess('PIN updated successfully!');
-      setTimeout(() => {
+      safeTimeout(() => {
         setIsPinModalOpen(false);
         setCurrentPin('');
         setNewPin('');
@@ -575,7 +617,7 @@ export const SettingsPage: React.FC = () => {
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
             Made with Fedora Linux 🚀
           </span>
-          <span className="font-mono">Lyncost v0.1.5 • Native Linux Desktop</span>
+          <span className="font-mono">Lyncost v0.1.6 • Native Linux Desktop</span>
         </div>
       </div>
 
@@ -1073,7 +1115,7 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <p className="text-xs text-zinc-400">
-            DhanKhata creates automatic daily backups upon first launch of each day (keeping newest 10 backups). You can also generate immediate snapshots or restore from any existing backup below.
+            Lyncost creates automatic daily backups upon first launch of each day (keeping newest 10 backups). You can also generate immediate snapshots or restore from any existing backup below.
           </p>
 
           {backupNotice && (
@@ -1335,18 +1377,23 @@ export const SettingsPage: React.FC = () => {
         </div>
 
         {/* Security Settings Card */}
-        <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <ShieldCheck className="w-4 h-4 text-purple-400" />
-            <h3>Security & Authentication</h3>
+        <div className={`p-5 rounded-2xl border space-y-4 ${
+          theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'
+        }`}>
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <ShieldCheck className="w-4 h-4 text-purple-500" />
+            <h3 className={theme === 'light' ? 'text-slate-900' : 'text-white'}>Security & Authentication</h3>
           </div>
 
-          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Master PIN Protection */}
+          <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-zinc-950 border-zinc-800'
+          }`}>
             <div>
-              <span className="text-xs font-semibold text-white block">
+              <span className={`text-xs font-semibold block ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
                 6-Digit PIN Protection
               </span>
-              <span className="text-xs text-zinc-400">
+              <span className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
                 Encrypted via bcrypt hash in local app storage
               </span>
             </div>
@@ -1361,20 +1408,93 @@ export const SettingsPage: React.FC = () => {
                   setConfirmPin('');
                   setIsPinModalOpen(true);
                 }}
-                className="px-3.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition-colors cursor-pointer flex items-center gap-1.5"
+                className={`px-3.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  theme === 'light'
+                    ? 'bg-white hover:bg-slate-100 text-slate-800 border-slate-200 shadow-xs'
+                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700'
+                }`}
               >
-                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <KeyRound className="w-3.5 h-3.5 text-amber-500" />
                 Change PIN
               </button>
               <button
                 type="button"
                 onClick={lockApp}
-                className="px-3.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition-colors cursor-pointer flex items-center gap-1.5"
+                className={`px-3.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  theme === 'light'
+                    ? 'bg-purple-100 hover:bg-purple-200 text-purple-800 border-purple-300'
+                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700'
+                }`}
               >
-                <Lock className="w-3.5 h-3.5 text-purple-400" />
+                <Lock className="w-3.5 h-3.5 text-purple-500" />
                 Lock App Now
               </button>
             </div>
+          </div>
+
+          {/* Inactivity Auto-Lock */}
+          <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-zinc-950 border-zinc-800'
+          }`}>
+            <div>
+              <span className={`text-xs font-semibold block ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
+                Inactivity Auto-Lock
+              </span>
+              <span className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
+                Automatically locks the app when keyboard or mouse is inactive
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {[
+                { label: '1 min', val: 1 },
+                { label: '5 min', val: 5 },
+                { label: '15 min', val: 15 },
+                { label: '30 min', val: 30 },
+                { label: 'Never', val: 0 },
+              ].map((opt) => (
+                <button
+                  key={opt.val}
+                  type="button"
+                  onClick={() => handleChangeAutoLock(opt.val)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                    autoLockMinutes === opt.val
+                      ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                      : theme === 'light'
+                      ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                      : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border-zinc-800'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Window Blur Privacy Shield */}
+          <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-zinc-950 border-zinc-800'
+          }`}>
+            <div>
+              <span className={`text-xs font-semibold block ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
+                Window Blur Privacy Shield
+              </span>
+              <span className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
+                Applies blur shield overlay when switching away from Lyncost (anti shoulder-surfing)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleBlurOnUnfocus}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                blurOnUnfocus
+                  ? 'bg-purple-600 text-white border-purple-500'
+                  : theme === 'light'
+                  ? 'bg-slate-200 text-slate-700 border-slate-300'
+                  : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+              }`}
+            >
+              {blurOnUnfocus ? 'Enabled' : 'Disabled'}
+            </button>
           </div>
         </div>
 

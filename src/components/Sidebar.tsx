@@ -21,6 +21,7 @@ import {
   Moon,
   Calculator,
   Search,
+  Lock,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -56,6 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const settings = useAppStore(state => state.settings);
   const theme = useAppStore(state => state.theme);
   const setTheme = useAppStore(state => state.setTheme);
+  const lockApp = useAppStore(state => state.lockApp);
 
   return (
     <aside className={`w-64 border-r flex flex-col justify-between select-none h-full shrink-0 z-30 transition-colors ${
@@ -77,7 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Lyncost
               </h1>
               <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-500/15 text-purple-400 border border-purple-500/25">
-                v0.1.5
+                v0.1.6
               </span>
             </div>
             <p className={`text-[10px] font-extrabold tracking-wide flex items-center gap-1 ${
@@ -88,7 +90,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </p>
           </div>
         </div>
-        <NotificationBell />
+        <div className="flex items-center gap-1.5">
+          {settings?.has_pin && (
+            <button
+              type="button"
+              onClick={lockApp}
+              title="Lock Lyncost (Ctrl+L)"
+              className={`p-2 rounded-xl transition-all cursor-pointer border active:scale-95 ${
+                theme === 'light'
+                  ? 'bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-purple-700 border-slate-200'
+                  : 'bg-zinc-850/80 hover:bg-zinc-800 text-zinc-400 hover:text-purple-400 border-zinc-700/60'
+              }`}
+            >
+              <Lock className="w-4 h-4 text-purple-500" />
+            </button>
+          )}
+          <NotificationBell />
+        </div>
       </div>
 
       {/* Quick Action Buttons */}

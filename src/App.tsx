@@ -22,12 +22,14 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { PinScreen } from './components/PinScreen';
 import { SetupWizard } from './components/SetupWizard';
 import { LicenseActivationScreen } from './components/LicenseActivationScreen';
-import { RefreshCw, Coins } from 'lucide-react';
+import { RefreshCw, Coins, ShieldCheck } from 'lucide-react';
 import './App.css';
 
 export const App: React.FC = () => {
   const isLoading = useAppStore(state => state.isLoading);
   const isUnlocked = useAppStore(state => state.isUnlocked);
+  const lockApp = useAppStore(state => state.lockApp);
+  const settings = useAppStore(state => state.settings);
   const accounts = useAppStore(state => state.accounts);
   const activeTab = useAppStore(state => state.activeTab);
   const initApp = useAppStore(state => state.initApp);
@@ -54,13 +56,7 @@ export const App: React.FC = () => {
   const [isQuickTxnOpen, setIsQuickTxnOpen] = React.useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = React.useState(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = React.useState(false);
-
-  // Developer preview hook (allows testing activation screen anytime via console)
-  useEffect(() => {
-    const handleTest = () => setIsLicenseActivated(false);
-    window.addEventListener('test_license_screen', handleTest);
-    return () => window.removeEventListener('test_license_screen', handleTest);
-  }, []);
+  const [isWindowBlurred, setIsWindowBlurred] = React.useState(false);
 
   useEffect(() => {
     initApp();
@@ -81,11 +77,70 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('open_lyncost_wizard', handleOpenWizard);
   }, []);
 
+  // Security: Inactivity Auto-Lock system
+  useEffect(() => {
+    if (!isUnlocked || !settings?.has_pin) return;
+
+    const rawMinutes = localStorage.getItem('lyncost_autolock_minutes');
+    // Default: 5 minutes if PIN is enabled, 0 = disabled
+    const minutes = rawMinutes !== null ? parseInt(rawMinutes, 10) : 5;
+    if (minutes <= 0 || isNaN(minutes)) return;
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        setIsQuickTxnOpen(false);
+        setIsCommandPaletteOpen(false);
+        lockApp();
+      }, minutes * 60 * 1000);
+    };
+
+    resetTimer();
+
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+    };
+  }, [isUnlocked, settings?.has_pin, lockApp]);
+
+  // Security: Window Blur Privacy Shield (optional shoulder-surfing protection)
+  useEffect(() => {
+    const handleBlur = () => {
+      if (localStorage.getItem('lyncost_blur_on_unfocus') === 'true' && isUnlocked) {
+        setIsWindowBlurred(true);
+      }
+    };
+    const handleFocus = () => {
+      setIsWindowBlurred(false);
+    };
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [isUnlocked]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Do not trigger global shortcuts if setup wizard is open or Windows license activation is pending
       if (isSetupWizardOpen || (isWindows && !isLicenseActivated)) {
         return;
+      }
+      // Ctrl+L or Cmd+L locks app immediately if PIN is configured
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        if (settings?.has_pin) {
+          e.preventDefault();
+          setIsQuickTxnOpen(false);
+          setIsCommandPaletteOpen(false);
+          lockApp();
+          return;
+        }
       }
       // Ctrl+K or Cmd+K opens Command Palette
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -105,7 +160,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isQuickTxnOpen, isCommandPaletteOpen, isSetupWizardOpen, isWindows, isLicenseActivated]);
+  }, [isQuickTxnOpen, isCommandPaletteOpen, isSetupWizardOpen, isWindows, isLicenseActivated, settings?.has_pin, lockApp]);
 
   const handleQuickTxnSaved = React.useCallback(async () => {
     await Promise.all([
@@ -213,6 +268,16 @@ export const App: React.FC = () => {
           localStorage.setItem('lyncost_wizard_completed', 'true');
         }}
       />
+
+      {/* Privacy Shield Overlay when window unfocused */}
+      {isWindowBlurred && (
+        <div className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center pointer-events-none select-none">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900/90 border border-purple-500/30 text-white text-xs font-bold shadow-2xl">
+            <ShieldCheck className="w-4 h-4 text-purple-400" />
+            <span>Privacy Shield Active (Window Unfocused)</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

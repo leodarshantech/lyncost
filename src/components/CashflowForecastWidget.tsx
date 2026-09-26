@@ -15,10 +15,16 @@ export const CashflowForecastWidget: React.FC = () => {
   const bills = useAppStore(state => state.bills);
   const settings = useAppStore(state => state.settings);
   const theme = useAppStore(state => state.theme);
+  const isPrivacyMode = useAppStore(state => state.isPrivacyMode);
 
   const [isExpanded, setIsExpanded] = useState(false);
 
   const baseCurrency = settings?.base_currency || 'INR';
+
+  const formatAmount = (val: number) => {
+    if (isPrivacyMode) return '••••••';
+    return formatIndianCurrency(val, baseCurrency);
+  };
 
   // 1. Current liquid balance (Bank + Cash accounts)
   const liquidAccounts = accounts.filter(a => a.is_archived === 0 && (a.type === 'bank' || a.type === 'cash'));
@@ -113,7 +119,7 @@ export const CashflowForecastWidget: React.FC = () => {
   const isDeficitWarning = projectedEndingBalance < 0;
 
   return (
-    <div className={`p-5 rounded-2xl border transition-all ${
+    <div className={`p-5 rounded-2xl border transition-all h-full flex flex-col justify-between ${
       theme === 'light'
         ? 'bg-white border-slate-200 shadow-sm'
         : 'bg-[#0b0f19] border-zinc-850 shadow-md'
@@ -166,46 +172,70 @@ export const CashflowForecastWidget: React.FC = () => {
       {/* Projection Metric Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Current Liquid Balance */}
-        <div className={`p-3 rounded-xl border ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] transition-all ${
           theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-zinc-900/70 border-zinc-800'
         }`}>
-          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-            Current Liquid
-          </span>
-          <span className={`text-sm sm:text-base font-black font-mono ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
-            {formatIndianCurrency(currentLiquidBalance, baseCurrency)}
-          </span>
-          <span className="text-[10px] text-zinc-500 block mt-0.5">Bank & Cash</span>
+          <div className="h-6 flex items-center justify-between">
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${theme === 'light' ? 'text-slate-500' : 'text-zinc-400'}`}>
+              Current Liquid
+            </span>
+          </div>
+          <div className="my-1">
+            <span className={`text-base sm:text-lg font-black font-mono tracking-tight ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
+              {formatAmount(currentLiquidBalance)}
+            </span>
+          </div>
+          <div className="h-4 flex items-center">
+            <span className={`text-[10px] font-medium truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-500'}`}>
+              Bank & Cash
+            </span>
+          </div>
         </div>
 
         {/* Expected Inflows */}
-        <div className={`p-3 rounded-xl border ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] transition-all ${
           theme === 'light' ? 'bg-emerald-50/50 border-emerald-200' : 'bg-emerald-950/20 border-emerald-900/40'
         }`}>
-          <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider block mb-1">
-            Est. Inflows
-          </span>
-          <span className="text-sm sm:text-base font-black font-mono text-emerald-500">
-            +{formatIndianCurrency(totalProjectedInflows, baseCurrency)}
-          </span>
-          <span className="text-[10px] text-emerald-600 block mt-0.5">Next 30 days</span>
+          <div className="h-6 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">
+              Est. Inflows
+            </span>
+          </div>
+          <div className="my-1">
+            <span className="text-base sm:text-lg font-black font-mono tracking-tight text-emerald-500">
+              +{formatAmount(totalProjectedInflows)}
+            </span>
+          </div>
+          <div className="h-4 flex items-center">
+            <span className="text-[10px] text-emerald-600 font-medium truncate">
+              Next 30 days
+            </span>
+          </div>
         </div>
 
         {/* Expected Outflows */}
-        <div className={`p-3 rounded-xl border ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] transition-all ${
           theme === 'light' ? 'bg-rose-50/50 border-rose-200' : 'bg-rose-950/20 border-rose-900/40'
         }`}>
-          <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider block mb-1">
-            Est. Outflows
-          </span>
-          <span className="text-sm sm:text-base font-black font-mono text-rose-500">
-            -{formatIndianCurrency(totalProjectedOutflows, baseCurrency)}
-          </span>
-          <span className="text-[10px] text-rose-600 block mt-0.5">Bills & recurring</span>
+          <div className="h-6 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider">
+              Est. Outflows
+            </span>
+          </div>
+          <div className="my-1">
+            <span className="text-base sm:text-lg font-black font-mono tracking-tight text-rose-500">
+              -{formatAmount(totalProjectedOutflows)}
+            </span>
+          </div>
+          <div className="h-4 flex items-center">
+            <span className="text-[10px] text-rose-600 font-medium truncate">
+              Bills & recurring
+            </span>
+          </div>
         </div>
 
         {/* Projected Ending Balance */}
-        <div className={`p-3 rounded-xl border ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between min-h-[96px] transition-all ${
           isDeficitWarning
             ? theme === 'light'
               ? 'bg-rose-50 border-rose-200 text-rose-950'
@@ -214,15 +244,21 @@ export const CashflowForecastWidget: React.FC = () => {
             ? 'bg-purple-50 border-purple-200 text-purple-950'
             : 'bg-purple-950/30 border-purple-800/50 text-purple-200'
         }`}>
-          <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block mb-1">
-            Day 30 Forecast
-          </span>
-          <span className="text-sm sm:text-base font-black font-mono">
-            {formatIndianCurrency(projectedEndingBalance, baseCurrency)}
-          </span>
-          <span className="text-[10px] text-zinc-500 block mt-0.5">
-            {netCashflow >= 0 ? 'Net Surplus' : 'Net Deficit'}
-          </span>
+          <div className="h-6 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">
+              Day 30 Forecast
+            </span>
+          </div>
+          <div className="my-1">
+            <span className="text-base sm:text-lg font-black font-mono tracking-tight">
+              {formatAmount(projectedEndingBalance)}
+            </span>
+          </div>
+          <div className="h-4 flex items-center">
+            <span className="text-[10px] font-medium truncate opacity-80">
+              {netCashflow >= 0 ? 'Net Surplus' : 'Net Deficit'}
+            </span>
+          </div>
         </div>
       </div>
 

@@ -232,7 +232,9 @@ export const TransactionsPage: React.FC = () => {
       </div>
 
       {/* Filter / Search Bar */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
+      <div className={`p-4 rounded-2xl border space-y-3 ${
+        theme === 'light' ? 'bg-white border-slate-200 shadow-sm' : 'bg-zinc-900/80 border-zinc-800'
+      }`}>
         <div className="flex flex-col md:flex-row items-center gap-3">
           {/* Search Box */}
           <div className="relative flex-1 w-full">
@@ -242,20 +244,30 @@ export const TransactionsPage: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by note, category, or account..."
-              className="w-full pl-9 pr-4 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-purple-500"
+              className={`w-full pl-9 pr-4 py-2 border rounded-xl text-xs focus:outline-none focus:border-purple-500 ${
+                theme === 'light'
+                  ? 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400'
+                  : 'bg-zinc-950 border-zinc-800 text-white placeholder:text-zinc-500'
+              }`}
             />
           </div>
 
           {/* Quick Type Filter Tabs */}
-          <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-xl w-full md:w-auto">
+          <div className={`flex items-center gap-1 p-1 border rounded-xl w-full md:w-auto ${
+            theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-zinc-950 border-zinc-800'
+          }`}>
             {['all', 'expense', 'income', 'transfer'].map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setFilterType(t)}
-                className={`flex-1 md:flex-none px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all cursor-pointer ${
+                className={`flex-1 md:flex-none px-3 py-1.5 rounded-lg text-xs capitalize transition-all cursor-pointer ${
                   filterType === t
-                    ? 'bg-zinc-800 text-white shadow-sm font-semibold'
+                    ? theme === 'light'
+                      ? 'bg-white text-slate-900 font-bold shadow-xs'
+                      : 'bg-zinc-800 text-white shadow-sm font-semibold'
+                    : theme === 'light'
+                    ? 'text-slate-600 hover:text-slate-900'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -267,9 +279,11 @@ export const TransactionsPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
               showFilters
-                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                ? 'bg-purple-500/15 text-purple-600 dark:text-purple-300 border-purple-500/30'
+                : theme === 'light'
+                ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                 : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:border-zinc-700'
             }`}
           >
@@ -280,7 +294,9 @@ export const TransactionsPage: React.FC = () => {
 
         {/* Expanded Filters Drawer */}
         {showFilters && (
-          <div className="pt-3 border-t border-zinc-850 grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+          <div className={`pt-3 border-t grid grid-cols-2 md:grid-cols-5 gap-3 text-xs ${
+            theme === 'light' ? 'border-slate-200' : 'border-zinc-850'
+          }`}>
             <div>
               <label className="block text-zinc-400 mb-1 font-semibold">Account</label>
               <select
@@ -427,9 +443,13 @@ export const TransactionsPage: React.FC = () => {
           </button>
         </div>
       ) : (
-        <div className="border border-zinc-800 rounded-2xl overflow-hidden bg-zinc-900/80 shadow-md">
+        <div className={`border rounded-2xl overflow-hidden shadow-sm transition-all ${
+          theme === 'light' ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900/80 shadow-md'
+        }`}>
           <table className="w-full text-left text-xs">
-            <thead className="bg-zinc-950/80 text-zinc-400 border-b border-zinc-800 font-semibold">
+            <thead className={`border-b font-semibold ${
+              theme === 'light' ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-zinc-950/80 text-zinc-400 border-zinc-800'
+            }`}>
               <tr>
                 <th className="p-3.5 pl-4">Status & Date</th>
                 <th className="p-3.5">Account</th>
@@ -439,14 +459,14 @@ export const TransactionsPage: React.FC = () => {
                 <th className="p-3.5 pr-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-850">
+            <tbody className={`divide-y ${theme === 'light' ? 'divide-slate-100' : 'divide-zinc-850'}`}>
               {transactions.map((txn) => {
                 const isIncome = txn.type === 'income';
                 const isTransfer = txn.type === 'transfer';
                 const isConfirmed = txn.is_confirmed === 1;
 
                 return (
-                  <tr key={txn.id} className="hover:bg-zinc-850/50 transition-colors">
+                  <tr key={txn.id} className={`transition-colors ${theme === 'light' ? 'hover:bg-slate-50' : 'hover:bg-zinc-850/50'}`}>
                     {/* Status & Date */}
                     <td className="p-3.5 pl-4">
                       <div className="flex items-center gap-2">
@@ -598,6 +618,7 @@ export const TransactionsPage: React.FC = () => {
           setSelectedTxn(null);
           setIsCloneMode(false);
         }}
+        onSaved={applyFilters}
         initialTransaction={selectedTxn}
         isClone={isCloneMode}
       />
