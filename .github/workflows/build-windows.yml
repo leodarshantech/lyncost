@@ -35,8 +35,62 @@ jobs:
       - name: Install Frontend Dependencies
         run: npm ci
 
+      - name: Run Frontend Tests
+        run: npm test
+
+      - name: Run Backend Tests (Windows)
+        working-directory: src-tauri
+        run: cargo test --lib
+
       - name: Build Windows Executable & Installer
         run: npx tauri build
+
+      # Installs the real NSIS installer silently, launches the app and proves it works:
+      #  - process stays alive (no startup crash)
+      #  - database is created and fully migrated (Rust side)
+      #  - daily backup file appears (only happens if the UI loaded and its IPC calls
+      #    reached the backend, i.e. the WebView + CSP work)
+      - name: Smoke Test Installed App
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA\Lyncost", "$env:ProgramFiles\Lyncost" -Filter lyncost.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "Installer did not install lyncost.exe" }
+          Write-Host "Installed to $($exe.FullName)"
+
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 30
+
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("$PWD\smoke-test-screenshot.png")
+
+          if ($proc.HasExited) { throw "Lyncost exited early with code $($proc.ExitCode)" }
+
+          $dataDir = "$env:APPDATA\com.lyncost.desktop"
+          $db = "$dataDir\lyncost.db"
+          if (-not (Test-Path $db)) { throw "Database was not created at $db" }
+          $version = python -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0])" $db
+          Write-Host "Schema version: $version"
+          if ([int]$version -lt 8) { throw "Migrations incomplete (schema version $version)" }
+
+          $backups = Get-ChildItem "$dataDir\backups" -Filter *.db -ErrorAction SilentlyContinue
+          if (-not $backups) { throw "No startup backup found: frontend did not reach the backend (WebView/CSP/IPC problem)" }
+          Write-Host "Startup backup created: $($backups[0].Name)"
+
+          Stop-Process -Id $proc.Id -Force
+          Write-Host "SMOKE TEST PASSED"
+
+      - name: Upload Smoke Test Screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Smoke-Test-Screenshot
+          path: smoke-test-screenshot.png
+          if-no-files-found: ignore
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
