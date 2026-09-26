@@ -7,7 +7,7 @@ import {
   ChevronUp,
   Clock,
 } from 'lucide-react';
-import { formatIndianCurrency, formatIndianDate } from '../lib/utils';
+import { formatIndianCurrency, formatIndianDate, parseLocalDate, toLocalDateString } from '../lib/utils';
 
 export const CashflowForecastWidget: React.FC = () => {
   const accounts = useAppStore(state => state.accounts);
@@ -47,7 +47,7 @@ export const CashflowForecastWidget: React.FC = () => {
 
   // Parse recurring rules
   recurringRules.filter(r => r.is_active === 1).forEach(rule => {
-    let nextDate = new Date(rule.next_due_date);
+    let nextDate = parseLocalDate(rule.next_due_date);
     // If nextDate is overdue, treat as due immediately
     if (nextDate < now) {
       nextDate = new Date();
@@ -60,7 +60,7 @@ export const CashflowForecastWidget: React.FC = () => {
           name: rule.name,
           type: 'inflow',
           amount: rule.amount,
-          date: nextDate.toISOString().split('T')[0],
+          date: toLocalDateString(nextDate),
           source: 'Recurring Rule',
         });
       } else if (rule.type === 'expense') {
@@ -69,7 +69,7 @@ export const CashflowForecastWidget: React.FC = () => {
           name: rule.name,
           type: 'outflow',
           amount: rule.amount,
-          date: nextDate.toISOString().split('T')[0],
+          date: toLocalDateString(nextDate),
           source: 'Recurring Rule',
         });
       }
@@ -89,7 +89,7 @@ export const CashflowForecastWidget: React.FC = () => {
 
   // Parse unpaid bills
   bills.filter(b => b.is_paid === 0).forEach(bill => {
-    const dueDate = new Date(bill.due_date);
+    const dueDate = parseLocalDate(bill.due_date);
     if (dueDate <= thirtyDaysFromNow) {
       upcomingEvents.push({
         id: `bill-${bill.id}`,

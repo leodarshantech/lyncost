@@ -1,5 +1,6 @@
 -- Migration 007: Relax payment_type CHECK constraint on transactions table
-PRAGMA foreign_keys = OFF;
+-- NOTE: runs with foreign_keys OFF (toggled in db.rs, outside the transaction).
+
 
 CREATE TABLE IF NOT EXISTS transactions_v7 (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,4 +26,4 @@ FROM transactions;
 DROP TABLE transactions;
 ALTER TABLE transactions_v7 RENAME TO transactions;
 
-PRAGMA foreign_keys = ON;
+

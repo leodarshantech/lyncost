@@ -6,6 +6,7 @@ import {
   WalletCards,
   ArrowLeftRight,
   Target,
+  PiggyBank,
   ReceiptText,
   Repeat,
   TrendingUp,
@@ -135,7 +136,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: Calculator,
         badge: 'New',
         action: () => {
-          setActiveTab('calculators' as any);
+          setActiveTab('calculators');
           onClose();
         },
       },
@@ -180,6 +181,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: Target,
         action: () => {
           setActiveTab('goals');
+          onClose();
+        },
+      },
+      {
+        id: 'nav-budgets',
+        title: 'Budgets',
+        category: 'Pages',
+        subtitle: 'Spending limits per category with pace warnings',
+        icon: PiggyBank,
+        action: () => {
+          setActiveTab('budgets');
           onClose();
         },
       },

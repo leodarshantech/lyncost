@@ -9,6 +9,7 @@ import {
   UpdateRecurringRulePayload,
 } from '../types';
 import { X, RefreshCw, Repeat, ArrowDownLeft, ArrowUpRight, ArrowLeftRight } from 'lucide-react';
+import { toLocalDateString } from '../lib/utils';
 
 interface RecurringRuleModalProps {
   isOpen: boolean;
@@ -37,7 +38,7 @@ export const RecurringRuleModal: React.FC<RecurringRuleModalProps> = ({
   const [amount, setAmount] = useState('');
   const [paymentType, setPaymentType] = useState<PaymentType>('upi');
   const [frequency, setFrequency] = useState<RecurringFrequency>('monthly');
-  const [nextDueDate, setNextDueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [nextDueDate, setNextDueDate] = useState(toLocalDateString());
   const [isActive, setIsActive] = useState(true);
   const [note, setNote] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export const RecurringRuleModal: React.FC<RecurringRuleModalProps> = ({
       const defPm = paymentMethods.find((p) => p.is_default === 1 && p.is_active === 1) || paymentMethods.find((p) => p.is_active === 1);
       setPaymentType((defPm?.type_key as PaymentType) || 'cash');
       setFrequency('monthly');
-      setNextDueDate(new Date().toISOString().split('T')[0]);
+      setNextDueDate(toLocalDateString());
       setIsActive(true);
       setNote('');
     }

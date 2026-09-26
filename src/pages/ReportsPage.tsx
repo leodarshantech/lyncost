@@ -34,7 +34,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
 } from 'lucide-react';
-import { formatIndianDate, formatIndianCurrency } from '../lib/utils';
+import { formatIndianDate, formatIndianCurrency, toLocalDateString } from '../lib/utils';
+import { exportCsvWithNotice } from '../lib/exportFile';
 
 const COLORS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6',
@@ -144,26 +145,7 @@ export const ReportsPage: React.FC = () => {
 
   // CSV Export Helper
   const downloadCsv = (filename: string, rows: (string | number)[][]) => {
-    const csvContent = rows
-      .map((row) =>
-        row
-          .map((cell) => {
-            const escaped = String(cell).replace(/"/g, '""');
-            return `"${escaped}"`;
-          })
-          .join(',')
-      )
-      .join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    exportCsvWithNotice(filename, rows);
   };
 
   const exportSpendingCsv = () => {
@@ -175,7 +157,7 @@ export const ReportsPage: React.FC = () => {
       item.percentage.toFixed(2),
       item.transaction_count,
     ]);
-    downloadCsv(`spending_report_${preset}_${new Date().toISOString().slice(0, 10)}.csv`, [headers, ...rows]);
+    downloadCsv(`spending_report_${preset}_${toLocalDateString()}.csv`, [headers, ...rows]);
   };
 
   const exportTrendCsv = () => {
@@ -186,7 +168,7 @@ export const ReportsPage: React.FC = () => {
       item.total_expense.toFixed(2),
       item.net_cashflow.toFixed(2),
     ]);
-    downloadCsv(`income_expense_trend_${new Date().toISOString().slice(0, 10)}.csv`, [headers, ...rows]);
+    downloadCsv(`income_expense_trend_${toLocalDateString()}.csv`, [headers, ...rows]);
   };
 
   const exportNetWorthCsv = () => {
@@ -198,7 +180,7 @@ export const ReportsPage: React.FC = () => {
       item.total_debts.toFixed(2),
       item.net_worth.toFixed(2),
     ]);
-    downloadCsv(`net_worth_history_${new Date().toISOString().slice(0, 10)}.csv`, [headers, ...rows]);
+    downloadCsv(`net_worth_history_${toLocalDateString()}.csv`, [headers, ...rows]);
   };
 
   const exportInvestmentsCsv = () => {
@@ -231,7 +213,7 @@ export const ReportsPage: React.FC = () => {
       h.unrealized_pnl_base.toFixed(2),
       h.pnl_percent.toFixed(2),
     ]);
-    downloadCsv(`investment_performance_${new Date().toISOString().slice(0, 10)}.csv`, [headers, ...rows]);
+    downloadCsv(`investment_performance_${toLocalDateString()}.csv`, [headers, ...rows]);
   };
 
   const handleSnapshotNow = async () => {

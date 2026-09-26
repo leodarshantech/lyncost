@@ -13,7 +13,7 @@ import {
   Clock,
   CheckCircle2,
 } from 'lucide-react';
-import { formatIndianDate } from '../lib/utils';
+import { formatIndianDate, toLocalDateString } from '../lib/utils';
 
 export const WarrantiesPage: React.FC = () => {
   const warranties = useAppStore(state => state.warranties);
@@ -26,7 +26,7 @@ export const WarrantiesPage: React.FC = () => {
 
   // Form State
   const [itemName, setItemName] = useState('');
-  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [purchaseDate, setPurchaseDate] = useState(toLocalDateString());
   const [expiresOn, setExpiresOn] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -38,11 +38,11 @@ export const WarrantiesPage: React.FC = () => {
   const openCreateModal = () => {
     setEditingWarranty(null);
     setItemName('');
-    const today = new Date().toISOString().split('T')[0];
+    const today = toLocalDateString();
     setPurchaseDate(today);
     const nextYear = new Date();
     nextYear.setFullYear(nextYear.getFullYear() + 1);
-    setExpiresOn(nextYear.toISOString().split('T')[0]);
+    setExpiresOn(toLocalDateString(nextYear));
     setNotes('');
     setFormError(null);
     setIsModalOpen(true);

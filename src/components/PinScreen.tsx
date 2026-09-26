@@ -20,144 +20,46 @@ export const PinScreen: React.FC = () => {
   const [wipeConfirmText, setWipeConfirmText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Security features: Brute-force rate limiting & shake feedback
-  const [failedAttempts, setFailedAttempts] = useState(0);
+  // Security features: lockout is enforced by the backend (persists across restarts);
+  // this state only mirrors it for the countdown UI.
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [isShaking, setIsShaking] = useState(false);
 
   useEffect(() => {
     if (lockoutSeconds <= 0) return;
-    const timer = setInterval(() => {
+    const timer = setTimeout(() => {
       setLockoutSeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
+        const next = Math.max(0, prev - 1);
+        if (next === 0) setLocalError(null);
+        return next;
       });
     }, 1000);
-    return () => clearInterval(timer);
+    return () => clearTimeout(timer);
   }, [lockoutSeconds]);
 
-  // Use refs to avoid re-attaching listener on every keystroke
-  const stateRef = useRef({ pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen, lockoutSeconds });
-  useEffect(() => {
-    stateRef.current = { pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen, lockoutSeconds };
-  }, [pin, confirmPin, setupStep, isInitialSetup, isWipeModalOpen, lockoutSeconds]);
-
-  // Handle keyboard inputs
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const { pin: currentPin, confirmPin: currentConfirmPin, setupStep: currentSetupStep, isInitialSetup: currentIsInitialSetup, isWipeModalOpen: currentIsWipeModalOpen, lockoutSeconds: currentLockout } = stateRef.current;
-      
-      if (currentIsWipeModalOpen || currentLockout > 0) return;
-
-      if (e.key >= '0' && e.key <= '9') {
-        appendDigit(e.key);
-      } else if (e.key === 'Backspace') {
-        handleBackspace();
-      } else if (e.key === 'Enter') {
-        if (currentIsInitialSetup && currentSetupStep === 'create' && currentPin.length === 6) {
-          setSetupStep('confirm');
-        } else if (currentIsInitialSetup && currentSetupStep === 'confirm' && currentConfirmPin.length === 6) {
-          handleSubmitSetup();
-        } else if (!currentIsInitialSetup && currentPin.length === 6) {
-          handleUnlockRef(currentPin);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const appendDigit = (digit: string) => {
-    if (lockoutSeconds > 0) return;
-    setLocalError(null);
-    if (isInitialSetup) {
-      if (setupStep === 'create') {
-        if (pin.length < 6) {
-          const next = pin + digit;
-          setPinState(next);
-          if (next.length === 6) {
-            setTimeout(() => setSetupStep('confirm'), 200);
-          }
-        }
-      } else {
-        if (confirmPin.length < 6) {
-          const next = confirmPin + digit;
-          setConfirmPin(next);
-          if (next.length === 6) {
-            handleCompleteSetup(pin, next);
-          }
-        }
-      }
-    } else {
-      if (pin.length < 6) {
-        const next = pin + digit;
-        setPinState(next);
-        if (next.length === 6) {
-          handleCompleteUnlock(next);
-        }
-      }
-    }
+  const applyLockout = (seconds: number) => {
+    setLockoutSeconds(seconds);
+    setLocalError(`Too many failed attempts. Security cooldown active for ${seconds} seconds.`);
   };
 
-  const handleBackspace = () => {
-    if (lockoutSeconds > 0) return;
-    setLocalError(null);
-    if (isInitialSetup) {
-      if (setupStep === 'create') {
-        setPinState((prev) => prev.slice(0, -1));
-      } else {
-        setConfirmPin((prev) => prev.slice(0, -1));
-      }
-    } else {
-      setPinState((prev) => prev.slice(0, -1));
-    }
-  };
-
-  const handleClear = () => {
-    if (lockoutSeconds > 0) return;
-    setLocalError(null);
-    if (isInitialSetup) {
-      if (setupStep === 'confirm') {
-        setConfirmPin('');
-      } else {
-        setPinState('');
-      }
-    } else {
-      setPinState('');
-    }
+  const shake = () => {
+    setIsShaking(true);
+    setTimeout(() => setIsShaking(false), 450);
   };
 
   const handleCompleteUnlock = async (enteredPin: string) => {
-    if (lockoutSeconds > 0) return;
     setIsProcessing(true);
-    const ok = await unlockApp(enteredPin);
+    const result = await unlockApp(enteredPin);
     setIsProcessing(false);
-    if (!ok) {
-      setPinState('');
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 450);
-      const nextFailures = failedAttempts + 1;
-      setFailedAttempts(nextFailures);
-      if (nextFailures >= 5) {
-        setLockoutSeconds(30);
-        setLocalError('Too many failed attempts. Security cooldown active for 30 seconds.');
-      } else {
-        setLocalError(`Incorrect PIN. ${5 - nextFailures} attempt${5 - nextFailures === 1 ? '' : 's'} remaining.`);
-      }
-    } else {
-      setFailedAttempts(0);
-      setLockoutSeconds(0);
-    }
-  };
+    if (result.valid) return;
 
-  const handleUnlockRef = async (currentPin: string) => {
-    if (currentPin.length === 6) {
-      await handleCompleteUnlock(currentPin);
+    setPinState('');
+    shake();
+    if (result.lockout_seconds > 0) {
+      applyLockout(result.lockout_seconds);
+    } else if (result.remaining_attempts > 0) {
+      const n = result.remaining_attempts;
+      setLocalError(`Incorrect PIN. ${n} attempt${n === 1 ? '' : 's'} remaining.`);
     }
   };
 
@@ -167,6 +69,7 @@ export const PinScreen: React.FC = () => {
       setPinState('');
       setConfirmPin('');
       setSetupStep('create');
+      shake();
       return;
     }
 
@@ -183,11 +86,83 @@ export const PinScreen: React.FC = () => {
     }
   };
 
-  const handleSubmitSetup = () => {
-    if (confirmPin.length === 6) {
-      handleCompleteSetup(pin, confirmPin);
+  const isInputBlocked = isProcessing || lockoutSeconds > 0 || isWipeModalOpen;
+
+  const appendDigit = (digit: string) => {
+    if (isInputBlocked) return;
+    setLocalError(null);
+    if (isInitialSetup && setupStep === 'confirm') {
+      if (confirmPin.length >= 6) return;
+      const next = confirmPin + digit;
+      setConfirmPin(next);
+      if (next.length === 6) handleCompleteSetup(pin, next);
+      return;
+    }
+    if (pin.length >= 6) return;
+    const next = pin + digit;
+    setPinState(next);
+    if (next.length === 6) {
+      if (isInitialSetup) {
+        setTimeout(() => setSetupStep('confirm'), 200);
+      } else {
+        handleCompleteUnlock(next);
+      }
     }
   };
+
+  const handleBackspace = () => {
+    if (isInputBlocked) return;
+    setLocalError(null);
+    if (isInitialSetup && setupStep === 'confirm') {
+      setConfirmPin((prev) => prev.slice(0, -1));
+    } else {
+      setPinState((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const handleClear = () => {
+    if (isInputBlocked) return;
+    setLocalError(null);
+    if (isInitialSetup && setupStep === 'confirm') {
+      setConfirmPin('');
+    } else {
+      setPinState('');
+    }
+  };
+
+  // Keyboard input: the listener always calls the latest handlers through a ref,
+  // so it never sees stale PIN state (the old bug: typing only ever registered 1 digit).
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    if (isWipeModalOpen) {
+      if (e.key === 'Escape') {
+        setIsWipeModalOpen(false);
+        setWipeConfirmText('');
+      }
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      appendDigit(e.key);
+    } else if (e.key === 'Backspace') {
+      e.preventDefault();
+      handleBackspace();
+    } else if (e.key === 'Delete' || e.key === 'Escape') {
+      e.preventDefault();
+      handleClear();
+    }
+  };
+
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      keyHandlerRef.current(e);
+    };
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
 
   const handleWipeConfirm = async () => {
     if (wipeConfirmText !== 'WIPE DATA') {
@@ -280,7 +255,7 @@ export const PinScreen: React.FC = () => {
             <button
               key={num}
               type="button"
-              disabled={isProcessing || lockoutSeconds > 0}
+              disabled={isInputBlocked}
               onClick={() => appendDigit(num.toString())}
               className={`h-14 rounded-xl font-semibold text-xl border transition-all flex items-center justify-center cursor-pointer shadow-sm active:scale-95 disabled:opacity-40 disabled:pointer-events-none ${
                 theme === 'light'
@@ -294,7 +269,7 @@ export const PinScreen: React.FC = () => {
 
           <button
             type="button"
-            disabled={isProcessing || lockoutSeconds > 0}
+            disabled={isInputBlocked}
             onClick={handleClear}
             className={`h-14 rounded-xl font-medium text-xs border transition-all flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
               theme === 'light'
@@ -307,7 +282,7 @@ export const PinScreen: React.FC = () => {
 
           <button
             type="button"
-            disabled={isProcessing || lockoutSeconds > 0}
+            disabled={isInputBlocked}
             onClick={() => appendDigit('0')}
             className={`h-14 rounded-xl font-semibold text-xl border transition-all flex items-center justify-center cursor-pointer shadow-sm active:scale-95 disabled:opacity-40 disabled:pointer-events-none ${
               theme === 'light'
@@ -320,7 +295,7 @@ export const PinScreen: React.FC = () => {
 
           <button
             type="button"
-            disabled={isProcessing || lockoutSeconds > 0}
+            disabled={isInputBlocked}
             onClick={handleBackspace}
             className={`h-14 rounded-xl border transition-all flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
               theme === 'light'
@@ -341,7 +316,9 @@ export const PinScreen: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setSetupStep('create');
+                  setPinState('');
                   setConfirmPin('');
+                  setLocalError(null);
                 }}
                 className="text-purple-400 hover:underline cursor-pointer"
               >

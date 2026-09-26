@@ -18,6 +18,7 @@ import {
   Plus,
   ShieldCheck,
 } from 'lucide-react';
+import { toLocalDateString } from '../lib/utils';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -54,7 +55,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [amount, setAmount] = useState<string>('');
   const [paymentType, setPaymentType] = useState<PaymentType>('upi');
   const [txnDate, setTxnDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    toLocalDateString()
   );
   const [note, setNote] = useState<string>('');
   const [isConfirmed, setIsConfirmed] = useState<boolean>(true);
@@ -82,7 +83,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       // If clone, default to today; otherwise keep original transaction date
       setTxnDate(
         isClone
-          ? new Date().toISOString().split('T')[0]
+          ? toLocalDateString()
           : initialTransaction.txn_date.split(' ')[0]
       );
       setNote(initialTransaction.note || '');
@@ -90,10 +91,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setTags([...initialTransaction.tags]);
       setTrackWarranty(false);
       setWarrantyItemName(initialTransaction.note || '');
-      setWarrantyPurchaseDate(new Date().toISOString().split('T')[0]);
+      setWarrantyPurchaseDate(toLocalDateString());
       const nextYear = new Date();
       nextYear.setFullYear(nextYear.getFullYear() + 1);
-      setWarrantyExpiresOn(nextYear.toISOString().split('T')[0]);
+      setWarrantyExpiresOn(toLocalDateString(nextYear));
       setWarrantyNotes('');
     } else {
       setTxnType(prefillType || 'expense');
@@ -103,7 +104,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setAmount('');
       const defPm = paymentMethods.find((p) => p.is_default === 1 && p.is_active === 1) || paymentMethods.find((p) => p.is_active === 1);
       setPaymentType((defPm?.type_key as PaymentType) || 'cash');
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = toLocalDateString();
       setTxnDate(todayStr);
       setNote(prefillNote || '');
       setIsConfirmed(true);
@@ -113,7 +114,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setWarrantyPurchaseDate(todayStr);
       const nextYear = new Date();
       nextYear.setFullYear(nextYear.getFullYear() + 1);
-      setWarrantyExpiresOn(nextYear.toISOString().split('T')[0]);
+      setWarrantyExpiresOn(toLocalDateString(nextYear));
       setWarrantyNotes('');
     }
     setFormError(null);
@@ -455,7 +456,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 <div className="flex items-center gap-1.5 text-[10px]">
                   <button
                     type="button"
-                    onClick={() => setTxnDate(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0])}
+                    onClick={() => setTxnDate(toLocalDateString())}
                     className="px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors bg-zinc-800 hover:bg-zinc-700 text-zinc-300 cursor-pointer border border-zinc-700/50"
                   >
                     Today
@@ -464,7 +465,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     type="button"
                     onClick={() => {
                       const d = new Date(Date.now() - 86400000);
-                      setTxnDate(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+                      setTxnDate(toLocalDateString(d));
                     }}
                     className="px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors bg-zinc-800 hover:bg-zinc-700 text-zinc-300 cursor-pointer border border-zinc-700/50"
                   >

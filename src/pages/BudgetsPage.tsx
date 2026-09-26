@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { BudgetPeriod, BudgetProgress, CreateBudgetPayload } from '../types';
 import {
@@ -12,7 +12,7 @@ import {
   X,
   Check,
 } from 'lucide-react';
-import { formatIndianDate, formatIndianCurrency } from '../lib/utils';
+import { formatIndianDate, formatIndianCurrency, toLocalDateString } from '../lib/utils';
 
 export const BudgetsPage: React.FC = () => {
   const budgets = useAppStore(state => state.budgets);
@@ -21,6 +21,12 @@ export const BudgetsPage: React.FC = () => {
   const createBudget = useAppStore(state => state.createBudget);
   const updateBudget = useAppStore(state => state.updateBudget);
   const deleteBudget = useAppStore(state => state.deleteBudget);
+  const loadBudgets = useAppStore(state => state.loadBudgets);
+
+  // Spending changes on other pages, so refresh progress whenever the page opens
+  useEffect(() => {
+    loadBudgets();
+  }, [loadBudgets]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<BudgetProgress | null>(null);
@@ -29,7 +35,7 @@ export const BudgetsPage: React.FC = () => {
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [period, setPeriod] = useState<BudgetPeriod>('monthly');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(toLocalDateString());
   const [endDate, setEndDate] = useState('');
   const [rollover, setRollover] = useState(false);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
@@ -47,7 +53,7 @@ export const BudgetsPage: React.FC = () => {
     setName('');
     setAmount('');
     setPeriod('monthly');
-    const today = new Date().toISOString().split('T')[0];
+    const today = toLocalDateString();
     setStartDate(today);
     setEndDate('');
     setRollover(false);

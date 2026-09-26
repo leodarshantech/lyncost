@@ -701,6 +701,14 @@ pub struct BackupFileInfo {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PinVerifyResult {
+    pub valid: bool,
+    /// Seconds until another attempt is allowed (0 = not locked).
+    pub lockout_seconds: i64,
+    pub remaining_attempts: i64,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChangePinPayload {
     pub current_pin: String,
