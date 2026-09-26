@@ -2,31 +2,35 @@ import React, { useEffect } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
-import { AccountsPage } from './pages/AccountsPage';
-import { TransactionsPage } from './pages/TransactionsPage';
-import { CategoriesPage } from './pages/CategoriesPage';
-import { RecurringRulesPage } from './pages/RecurringRulesPage';
-import { GoalsPage } from './pages/GoalsPage';
-import { BillsPage } from './pages/BillsPage';
-import { ShoppingListPage } from './pages/ShoppingListPage';
-import { WarrantiesPage } from './pages/WarrantiesPage';
-import { CsvImportPage } from './pages/CsvImportPage';
-import { InvestmentsPage } from './pages/InvestmentsPage';
-import { DebtsPage } from './pages/DebtsPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { CalculatorsPage } from './pages/CalculatorsPage';
 import { TransactionModal } from './components/TransactionModal';
 import { CommandPalette } from './components/CommandPalette';
 import { UpdateBanner } from './components/UpdateBanner';
 import { PinScreen } from './components/PinScreen';
 import { SetupWizard } from './components/SetupWizard';
 import { LicenseActivationScreen } from './components/LicenseActivationScreen';
-import { RefreshCw, Coins, ShieldCheck } from 'lucide-react';
+import { RefreshCw, Coins, ShieldCheck, AlertTriangle } from 'lucide-react';
 import './App.css';
+
+// Pages other than the dashboard load on first visit to keep startup fast
+const AccountsPage = React.lazy(() => import('./pages/AccountsPage').then((m) => ({ default: m.AccountsPage })));
+const TransactionsPage = React.lazy(() => import('./pages/TransactionsPage').then((m) => ({ default: m.TransactionsPage })));
+const CategoriesPage = React.lazy(() => import('./pages/CategoriesPage').then((m) => ({ default: m.CategoriesPage })));
+const RecurringRulesPage = React.lazy(() => import('./pages/RecurringRulesPage').then((m) => ({ default: m.RecurringRulesPage })));
+const GoalsPage = React.lazy(() => import('./pages/GoalsPage').then((m) => ({ default: m.GoalsPage })));
+const BillsPage = React.lazy(() => import('./pages/BillsPage').then((m) => ({ default: m.BillsPage })));
+const ShoppingListPage = React.lazy(() => import('./pages/ShoppingListPage').then((m) => ({ default: m.ShoppingListPage })));
+const WarrantiesPage = React.lazy(() => import('./pages/WarrantiesPage').then((m) => ({ default: m.WarrantiesPage })));
+const CsvImportPage = React.lazy(() => import('./pages/CsvImportPage').then((m) => ({ default: m.CsvImportPage })));
+const InvestmentsPage = React.lazy(() => import('./pages/InvestmentsPage').then((m) => ({ default: m.InvestmentsPage })));
+const DebtsPage = React.lazy(() => import('./pages/DebtsPage').then((m) => ({ default: m.DebtsPage })));
+const ReportsPage = React.lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const CalculatorsPage = React.lazy(() => import('./pages/CalculatorsPage').then((m) => ({ default: m.CalculatorsPage })));
+const BudgetsPage = React.lazy(() => import('./pages/BudgetsPage').then((m) => ({ default: m.BudgetsPage })));
 
 export const App: React.FC = () => {
   const isLoading = useAppStore(state => state.isLoading);
+  const startupError = useAppStore(state => state.startupError);
   const isUnlocked = useAppStore(state => state.isUnlocked);
   const lockApp = useAppStore(state => state.lockApp);
   const settings = useAppStore(state => state.settings);
@@ -40,17 +44,21 @@ export const App: React.FC = () => {
 
   const theme = useAppStore(state => state.theme);
 
-  // Detect Windows vs Linux (or ?license_test=1 for developer preview)
+  // Detect Windows vs Linux (or ?license_test=1 for developer preview).
+  // Match the explicit "Windows" token; a loose /win/i also matches unrelated strings.
   const isLicenseTest = typeof window !== 'undefined' && window.location.search.includes('license_test');
-  const isWindows = typeof window !== 'undefined' && (/win/i.test(navigator.userAgent || navigator.platform) || isLicenseTest);
+  const isWindowsPlatform = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent || '');
+  const isWindows = isWindowsPlatform || isLicenseTest;
   const [isLicenseActivated, setIsLicenseActivated] = React.useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     if (isLicenseTest) return false;
     // On Linux / non-Windows, Lyncost is free
-    if (!/win/i.test(navigator.userAgent || navigator.platform)) {
-      return true;
+    if (!isWindowsPlatform) return true;
+    try {
+      return localStorage.getItem('lyncost_license_activated') === 'true';
+    } catch {
+      return false;
     }
-    return localStorage.getItem('lyncost_license_activated') === 'true';
   });
 
   const [isQuickTxnOpen, setIsQuickTxnOpen] = React.useState(false);
@@ -188,6 +196,28 @@ export const App: React.FC = () => {
     );
   }
 
+  if (startupError) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6 text-white">
+        <div className="max-w-lg w-full rounded-2xl bg-zinc-900 border border-rose-900/60 p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-950/70 border border-rose-900 text-rose-400 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <h1 className="text-lg font-bold">Lyncost could not open your database</h1>
+          </div>
+          <p className="text-sm text-zinc-300">
+            Your data has not been modified. Close Lyncost and try again. If this keeps happening, restore a backup
+            from the <span className="font-mono">backups</span> folder next to your database, or report the error below.
+          </p>
+          <pre className="text-xs text-rose-300 bg-zinc-950 border border-zinc-800 rounded-lg p-3 whitespace-pre-wrap break-words select-text">
+            {startupError}
+          </pre>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white select-none">
@@ -216,21 +246,30 @@ export const App: React.FC = () => {
       />
       <main className="flex-1 h-full overflow-y-auto p-6 sm:p-8 max-w-7xl custom-scrollbar">
         <UpdateBanner />
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'accounts' && <AccountsPage />}
-        {activeTab === 'transactions' && <TransactionsPage />}
-        {activeTab === 'categories' && <CategoriesPage />}
-        {activeTab === 'recurring' && <RecurringRulesPage />}
-        {activeTab === 'goals' && <GoalsPage />}
-        {activeTab === 'bills' && <BillsPage />}
-        {activeTab === 'shopping' && <ShoppingListPage />}
-        {activeTab === 'warranties' && <WarrantiesPage />}
-        {activeTab === 'csv_import' && <CsvImportPage />}
-        {activeTab === 'investments' && <InvestmentsPage />}
-        {activeTab === 'debts' && <DebtsPage />}
-        {activeTab === 'calculators' && <CalculatorsPage />}
-        {activeTab === 'reports' && <ReportsPage />}
-        {activeTab === 'settings' && <SettingsPage />}
+        <React.Suspense
+          fallback={
+            <div className="flex items-center justify-center py-24 text-zinc-500">
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            </div>
+          }
+        >
+          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'accounts' && <AccountsPage />}
+          {activeTab === 'transactions' && <TransactionsPage />}
+          {activeTab === 'categories' && <CategoriesPage />}
+          {activeTab === 'recurring' && <RecurringRulesPage />}
+          {activeTab === 'goals' && <GoalsPage />}
+          {activeTab === 'budgets' && <BudgetsPage />}
+          {activeTab === 'bills' && <BillsPage />}
+          {activeTab === 'shopping' && <ShoppingListPage />}
+          {activeTab === 'warranties' && <WarrantiesPage />}
+          {activeTab === 'csv_import' && <CsvImportPage />}
+          {activeTab === 'investments' && <InvestmentsPage />}
+          {activeTab === 'debts' && <DebtsPage />}
+          {activeTab === 'calculators' && <CalculatorsPage />}
+          {activeTab === 'reports' && <ReportsPage />}
+          {activeTab === 'settings' && <SettingsPage />}
+        </React.Suspense>
       </main>
 
       {/* Global Quick Transaction Modal accessible via Ctrl+N or Sidebar button */}

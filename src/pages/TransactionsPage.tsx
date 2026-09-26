@@ -15,7 +15,8 @@ import {
   Layers,
   Download,
 } from 'lucide-react';
-import { formatIndianDate, formatIndianCurrency } from '../lib/utils';
+import { formatIndianDate, formatIndianCurrency, toLocalDateString } from '../lib/utils';
+import { exportCsvWithNotice } from '../lib/exportFile';
 
 export const TransactionsPage: React.FC = () => {
   const transactions = useAppStore(state => state.transactions);
@@ -135,32 +136,20 @@ export const TransactionsPage: React.FC = () => {
 
     const rows = transactions.map((t) => [
       t.id,
-      `"${t.txn_date}"`,
-      `"${t.type}"`,
-      `"${(t.account_name || '').replace(/"/g, '""')}"`,
-      `"${(t.category_name || '').replace(/"/g, '""')}"`,
+      t.txn_date,
+      t.type,
+      t.account_name || '',
+      t.category_name || '',
       t.amount,
-      `"${t.account_currency}"`,
+      t.account_currency,
       t.base_amount,
-      `"${baseCurrency}"`,
-      `"${t.payment_type || ''}"`,
-      `"${(t.note || '').replace(/"/g, '""')}"`,
+      baseCurrency,
+      t.payment_type || '',
+      t.note || '',
       t.is_confirmed ? 'Confirmed' : 'Pending',
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute(
-      'download',
-      `lyncost-transactions-${new Date().toISOString().split('T')[0]}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    exportCsvWithNotice(`lyncost-transactions-${toLocalDateString()}.csv`, [headers, ...rows]);
   };
 
   // Filtered Summary Stats

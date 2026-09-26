@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { Key, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, Laptop, RefreshCw } from 'lucide-react';
 
 interface LicenseActivationScreenProps {
@@ -60,9 +61,9 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
         setTimeout(() => {
           onActivated();
         }, 1200);
-      } catch (err: any) {
+      } catch (err: unknown) {
         setIsActivating(false);
-        setError('Failed to save activation locally: ' + (err?.message || 'Storage error'));
+        setError('Failed to save activation locally: ' + (err instanceof Error ? err.message : 'Storage error'));
       }
     }, 600);
   };
@@ -155,14 +156,18 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
           <div className="pt-4 border-t border-zinc-800/80 space-y-2 text-[11px] text-zinc-500">
             <p className="flex items-center justify-center gap-1">
               Don't have a license key?{' '}
-              <a
-                href="https://lyncost.vercel.app"
-                target="_blank"
-                rel="noreferrer"
-                className="text-emerald-400 hover:underline inline-flex items-center gap-0.5 font-medium"
+              <button
+                type="button"
+                onClick={() => {
+                  // Webview links with target=_blank do nothing; open in the system browser
+                  openUrl('https://lyncost.vercel.app').catch(() => {
+                    window.open('https://lyncost.vercel.app', '_blank', 'noopener');
+                  });
+                }}
+                className="text-emerald-400 hover:underline inline-flex items-center gap-0.5 font-medium cursor-pointer"
               >
                 Purchase here <ExternalLink className="w-3 h-3" />
-              </a>
+              </button>
             </p>
             <p>
               Need help? Contact{' '}

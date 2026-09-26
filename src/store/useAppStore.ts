@@ -64,6 +64,7 @@ import {
   PaymentMethodItem,
   CreatePaymentMethodPayload,
   UpdatePaymentMethodPayload,
+  PinVerifyResult,
 } from '../types';
 import { autoSyncNumberFormatWithCurrency } from '../lib/utils';
 
@@ -134,7 +135,8 @@ interface AppStoreState {
   setActiveTab: (tab: AppStoreState['activeTab']) => void;
   initApp: () => Promise<void>;
   setPin: (pin: string) => Promise<void>;
-  unlockApp: (pin: string) => Promise<boolean>;
+  unlockApp: (pin: string) => Promise<PinVerifyResult>;
+  startupError: string | null;
   lockApp: () => void;
   loadAllCollections: () => Promise<void>;
   wipeData: () => Promise<void>;
@@ -330,6 +332,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   isUnlocked: false,
+  startupError: null,
   isLoading: true,
   theme: 'dark',
   error: null,
@@ -340,7 +343,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   initApp: async () => {
     set({ isLoading: true, error: null });
     try {
-      const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+      const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
       if (!isTauri) {
         // Safe mock for web preview (avoids "window.__TAURI_INTERNALS__ is undefined" error)
         const mockSettings: AppSettings = {
@@ -348,9 +351,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           base_currency: 'USD',
           theme: 'dark',
           has_pin: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as any;
+          last_backup_at: null,
+          last_networth_snapshot_at: null,
+          notify_os: false,
+          notify_advance_days: 1,
+          last_notification_check_at: null,
+        };
         set({
           settings: mockSettings,
           theme: 'dark',
@@ -358,6 +364,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           isLoading: false,
           error: null,
         });
+        return;
+      }
+
+      const startupError = await invoke<string | null>('get_startup_status');
+      if (startupError) {
+        set({ startupError, isLoading: false, isUnlocked: false });
         return;
       }
 
@@ -450,19 +462,21 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   unlockApp: async (pin: string) => {
     set({ error: null });
     try {
-      const valid = await invoke<boolean>('verify_pin', { pin });
-      if (valid) {
+      const result = await invoke<PinVerifyResult>('verify_pin', { pin });
+      if (result.valid) {
         set({ isUnlocked: true });
-        await get().loadAllCollections();
-        return true;
-      } else {
-        set({ error: 'Incorrect PIN. Please try again.' });
-        return false;
+        try {
+          await get().loadAllCollections();
+        } catch (err: unknown) {
+          set({ error: err instanceof Error ? err.message : String(err) });
+        }
+        get().checkForAppUpdate();
       }
+      return result;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       set({ error: msg });
-      return false;
+      return { valid: false, lockout_seconds: 0, remaining_attempts: 0 };
     }
   },
 
@@ -474,6 +488,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       await invoke('wipe_all_data');
+      // Reset per-install UI flags so the setup wizard runs again on the fresh database
+      for (const key of ['lyncost_wizard_completed', 'lyncost_base_currency']) {
+        try {
+          localStorage.removeItem(key);
+        } catch (_) {}
+      }
       await get().initApp();
       set({ isLoading: false });
     } catch (err: unknown) {

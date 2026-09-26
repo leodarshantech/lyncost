@@ -181,3 +181,18 @@ export function formatDateTime(dateStrOrObj?: string | Date | null): string {
 export const formatIndianCurrency = formatCurrency;
 export const formatIndianDate = formatDate;
 export const formatIndianDateTime = formatDateTime;
+
+/** YYYY-MM-DD for the user's *local* calendar day (toISOString() would give the UTC day). */
+export function toLocalDateString(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Parses YYYY-MM-DD as local midnight (new Date('YYYY-MM-DD') parses as UTC). */
+export function parseLocalDate(s: string): Date {
+  const [y, m, d] = s.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return new Date(s);
+  return new Date(y, m - 1, d);
+}
