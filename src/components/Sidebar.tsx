@@ -81,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Lyncost
               </h1>
               <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-500/15 text-purple-400 border border-purple-500/25">
-                v0.1.6
+                v{__APP_VERSION__}
               </span>
             </div>
             <p className={`text-[10px] font-extrabold tracking-wide flex items-center gap-1 ${
