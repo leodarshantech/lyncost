@@ -617,7 +617,7 @@ export const SettingsPage: React.FC = () => {
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
             Made with Fedora Linux 🚀
           </span>
-          <span className="font-mono">Lyncost v0.1.6 • Native Linux Desktop</span>
+          <span className="font-mono">Lyncost v{__APP_VERSION__} • Native Desktop</span>
         </div>
       </div>
 
@@ -711,7 +711,7 @@ export const SettingsPage: React.FC = () => {
                     ? 'bg-white text-emerald-700 border-emerald-300 shadow-sm'
                     : 'bg-emerald-950/70 text-emerald-300 border-emerald-800'
               }`}>
-                {updateInfo?.has_update ? `Update Available: v${updateInfo.latest_version}` : `Up to Date (v${updateInfo?.current_version || '0.1.5'})`}
+                {updateInfo?.has_update ? `Update Available: v${updateInfo.latest_version}` : `Up to Date (v${updateInfo?.current_version || __APP_VERSION__})`}
               </span>
             </div>
             <p className={`text-xs ${theme === 'light' ? 'text-slate-600' : 'text-zinc-400'}`}>

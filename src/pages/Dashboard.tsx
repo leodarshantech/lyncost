@@ -142,7 +142,7 @@ export const Dashboard: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <h2 className={`text-2xl font-bold tracking-tight ${theme === 'light' ? 'text-black' : 'text-white'}`}>Financial Dashboard</h2>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-500/20 text-purple-400 border border-purple-500/30">
-              v0.1.6
+              v{__APP_VERSION__}
             </span>
           </div>
           <p className="text-xs text-zinc-400 mt-1">
