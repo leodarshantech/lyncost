@@ -3,6 +3,14 @@
   "release_date": "2026-09-26",
   "notes": "UI symmetry & alignment overhaul (Financial Health Cockpit & 30-Day Cashflow projection), comprehensive security suite (PIN brute-force lockout, inactivity auto-lock, Ctrl+L instant lock, window blur privacy shield), memory leak fixes, and performance optimizations.",
   "tarball_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-0.1.6-linux-x86_64.tar.gz",
+  "windows_installer": {
+    "version": "0.1.6",
+    "release_date": "2026-09-26",
+    "zip_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost-Windows-Installer.zip",
+    "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.6_x64-setup.exe",
+    "msi_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.6_x64_en-US.msi",
+    "sha256": "f9c65a612748e3b0aaa94995b1e859d4b47a9081f36db8783fb8183189e5ff7e"
+  },
   "mobile_beta": {
     "version": "0.2.1",
     "release_date": "2026-09-13",
