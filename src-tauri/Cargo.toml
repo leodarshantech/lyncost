@@ -19,7 +19,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-tauri-plugin-notification = "2"
+tauri-plugin-notification = "=2.4.0"  # 2.5 requires tauri 2.12; keep runtime in sync with @tauri-apps/api 2.11
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
