@@ -1,15 +1,15 @@
 {
-  "version": "0.1.7",
-  "release_date": "2026-09-26",
-  "notes": "Hardened release: persistent backend PIN lockout & keyboard entry fixes, migration 007 data safety, automated safe SQLite backups & snapshots, strict CSP, database indexing (migration 008), restored Budgets page & local date correction.",
-  "tarball_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-0.1.7-linux-x86_64.tar.gz",
+  "version": "0.1.8",
+  "release_date": "2026-09-27",
+  "notes": "Windows: free 14-day trial with every feature unlocked. Enter your license key any time from the trial banner; your data is kept when the trial ends. The app now always shows its correct version.",
+  "tarball_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-0.1.8-linux-x86_64.tar.gz",
   "windows_installer": {
-    "version": "0.1.7",
-    "release_date": "2026-09-26",
+    "version": "0.1.8",
+    "release_date": "2026-09-27",
     "zip_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost-Windows-Installer.zip",
-    "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.7_x64-setup.exe",
-    "msi_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.7_x64_en-US.msi",
-    "sha256": "531d8ae11b5877a678d62c8a60263e14f01c392ab39e6d36e86cf07f2bd94225"
+    "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.8_x64-setup.exe",
+    "msi_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.8_x64_en-US.msi",
+    "sha256": "74974f1c96579323ea7117dcabc139cc302defb4a89bb692e57fd2faddc22066"
   },
   "mobile_beta": {
     "version": "0.2.1",
