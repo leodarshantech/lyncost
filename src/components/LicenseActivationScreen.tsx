@@ -137,20 +137,22 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
               </div>
             )}
 
+            {/* rounded-[0.75rem] (= rounded-xl) and no "bg-zinc-800" class on purpose: App.css
+                theme rules match class substrings and would repaint this green button as a card */}
             <button
               onClick={validateAndActivate}
               disabled={isActivating || licenseKey.trim().length === 0}
-              className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+              className="w-full py-3 px-4 rounded-[0.75rem] bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-zinc-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
             >
               {isActivating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Verifying License...</span>
+                  Verifying License...
                 </>
               ) : (
                 <>
                   <ShieldCheck className="w-4 h-4" />
-                  <span>Activate Perpetual License</span>
+                  Activate Perpetual License
                 </>
               )}
             </button>
