@@ -97,6 +97,14 @@ export const App: React.FC = () => {
     initApp();
   }, [initApp]);
 
+  // Re-check for updates every 6 hours for people who leave Lyncost open for days
+  const checkForAppUpdate = useAppStore(state => state.checkForAppUpdate);
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const timer = setInterval(() => checkForAppUpdate(), 6 * 60 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [isUnlocked, checkForAppUpdate]);
+
   useEffect(() => {
     if (!isLoading && isUnlocked) {
       const hasCompleted = localStorage.getItem('lyncost_wizard_completed') === 'true';

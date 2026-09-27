@@ -688,6 +688,8 @@ export interface AppUpdateInfo {
   release_notes: string;
   published_at: string;
   download_url: string;
+  /** "in_app" (Linux installs itself), "installer" (Windows runs the new setup.exe), "none" */
+  install_mode: 'in_app' | 'installer' | 'none';
 }
 
 export interface PaymentMethodItem {

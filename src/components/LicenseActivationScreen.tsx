@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { invoke } from '@tauri-apps/api/core';
 import { Key, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, Laptop, RefreshCw } from 'lucide-react';
 
 interface LicenseActivationScreenProps {
@@ -22,64 +23,55 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
   const [isActivating, setIsActivating] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Format key as user types: LYNC-XXXX-XXXX-XXXX
-  const handleKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleKeyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setError(null);
-    let raw = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-    // Auto-insert dashes
-    if (raw.startsWith('LYNC')) {
-      raw = raw.slice(4);
-    }
-    const parts = [];
-    for (let i = 0; i < raw.length && i < 12; i += 4) {
-      parts.push(raw.slice(i, i + 4));
-    }
-    const formatted = 'LYNC' + (parts.length > 0 ? '-' + parts.join('-') : '');
-    setLicenseKey(formatted);
+    setLicenseKey(e.target.value);
   };
 
-  const validateAndActivate = () => {
+  const validateAndActivate = async () => {
     setError(null);
-    const cleaned = licenseKey.trim().toUpperCase();
-
-    // Regex for LYNC-XXXX-XXXX-XXXX where X is 0-9 or A-F
-    const licenseRegex = /^LYNC-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/;
+    const cleaned = licenseKey.replace(/\s+/g, '').toUpperCase();
 
     if (!cleaned) {
-      setError('Please enter your license key.');
-      return;
-    }
-
-    if (!licenseRegex.test(cleaned)) {
-      setError('Invalid license format. Format must be: LYNC-XXXX-XXXX-XXXX (16 characters).');
+      setError('Please paste your license key.');
       return;
     }
 
     setIsActivating(true);
+    let valid = false;
+    try {
+      // Verified offline by the app core against the Lyncost public key (Ed25519 signature)
+      valid = await invoke<boolean>('verify_license_key', { key: cleaned });
+    } catch {
+      valid = false;
+    }
 
-    // Simulate cryptographic verification & save local activation flag
-    setTimeout(() => {
-      try {
-        localStorage.setItem('lyncost_license_key', cleaned);
-        localStorage.setItem('lyncost_license_activated', 'true');
-        localStorage.setItem('lyncost_activated_at', new Date().toISOString());
+    if (!valid) {
+      setIsActivating(false);
+      setError(
+        cleaned.startsWith('LYNC-') && cleaned.length <= 19
+          ? 'This is an older-format key. Get your updated key at lyncost.vercel.app/license using your payment ID.'
+          : 'This license key is not valid. Please copy the whole key from your purchase screen (it starts with LYNC2-).',
+      );
+      return;
+    }
 
-        setIsActivating(false);
-        setIsSuccess(true);
-
-        setTimeout(() => {
-          onActivated();
-        }, 1200);
-      } catch (err: unknown) {
-        setIsActivating(false);
-        setError('Failed to save activation locally: ' + (err instanceof Error ? err.message : 'Storage error'));
-      }
-    }, 600);
+    try {
+      localStorage.setItem('lyncost_license_key', cleaned);
+      localStorage.setItem('lyncost_license_activated', 'true');
+      localStorage.setItem('lyncost_activated_at', new Date().toISOString());
+      setIsActivating(false);
+      setIsSuccess(true);
+      setTimeout(() => onActivated(), 1200);
+    } catch (err: unknown) {
+      setIsActivating(false);
+      setError('Failed to save activation locally: ' + (err instanceof Error ? err.message : 'Storage error'));
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
+      e.preventDefault();
       validateAndActivate();
     }
   };
@@ -114,7 +106,7 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
               ? 'Your perpetual lifetime license is verified. Launching your private offline dashboard...'
               : trialExpired
                 ? 'Thanks for trying Lyncost! Your data is safe on this PC and nothing has been deleted. Enter a license key to keep using it.'
-                : 'Enter the 16-character license key provided on your purchase screen to unlock the software.'}
+                : 'Paste the license key from your purchase screen to unlock the software. Lost it? Recover it at lyncost.vercel.app/license.'}
           </p>
         </div>
 
@@ -125,14 +117,16 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
               License Key
             </label>
             <div className="relative">
-              <input
-                type="text"
+              <textarea
                 value={licenseKey}
                 onChange={handleKeyChange}
                 onKeyDown={handleKeyDown}
-                placeholder="LYNC-XXXX-XXXX-XXXX"
-                maxLength={19}
-                className="w-full px-4 py-3 rounded-xl bg-zinc-950 border border-zinc-800 text-sm font-mono text-emerald-300 font-bold tracking-widest placeholder-zinc-600 focus:outline-none focus:border-emerald-500/70 focus:ring-2 focus:ring-emerald-500/20 transition-all text-center"
+                placeholder="Paste your key here (starts with LYNC2-)"
+                rows={4}
+                spellCheck={false}
+                autoComplete="off"
+                aria-label="License key"
+                className="w-full px-4 py-3 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono text-emerald-300 font-semibold break-all resize-none select-text placeholder-zinc-600 focus:outline-none focus:border-emerald-500/70 focus:ring-2 focus:ring-emerald-500/20 transition-all"
               />
             </div>
 
@@ -145,7 +139,7 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
 
             <button
               onClick={validateAndActivate}
-              disabled={isActivating || licenseKey.length < 19}
+              disabled={isActivating || licenseKey.trim().length === 0}
               className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
             >
               {isActivating ? (

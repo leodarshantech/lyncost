@@ -1712,9 +1712,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       });
       set({ isInstallingUpdate: false, updateInstallSuccess: true });
     } catch (err: unknown) {
+      // Shown in the banner / Settings; not rethrown (callers are click handlers)
       const msg = err instanceof Error ? err.message : String(err);
       set({ isInstallingUpdate: false, updateError: msg });
-      throw new Error(msg);
     }
   },
 

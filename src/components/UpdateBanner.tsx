@@ -1,4 +1,5 @@
 import React from 'react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useAppStore } from '../store/useAppStore';
 import { Sparkles, Download, RefreshCw, CheckCircle2, AlertCircle, X } from 'lucide-react';
 
@@ -17,6 +18,9 @@ export const UpdateBanner: React.FC = () => {
   if (!updateInfo?.has_update || dismissUpdateBanner) {
     return null;
   }
+
+  // Windows updates by running the new installer; Linux replaces itself in place
+  const viaInstaller = updateInfo.install_mode === 'installer';
 
   return (
     <div className={`mb-6 p-4 rounded-2xl border transition-all duration-300 shadow-xl ${
@@ -43,7 +47,7 @@ export const UpdateBanner: React.FC = () => {
               <span className={`text-xs font-black uppercase tracking-wider ${
                 updateInstallSuccess ? 'text-emerald-500' : 'text-purple-500'
               }`}>
-                {updateInstallSuccess ? '✓ Update Installed' : '✨ New Update Available'}
+                {updateInstallSuccess ? (viaInstaller ? '✓ Installer Opened' : '✓ Update Installed') : '✨ New Update Available'}
               </span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                 theme === 'light'
@@ -63,21 +67,33 @@ export const UpdateBanner: React.FC = () => {
               theme === 'light' ? 'text-slate-700' : 'text-zinc-300'
             }`}>
               {updateInstallSuccess
-                ? 'The new version is installed in ~/.local/bin/lyncost. Restart the application to activate the update.'
-                : updateInfo.release_notes || 'A new release is ready with latest UI enhancements and security fixes.'}
+                ? viaInstaller
+                  ? 'Follow the installer to finish. Lyncost is closing so it can update; your data and license are kept.'
+                  : 'The new version is installed. Restart Lyncost to start using it.'
+                : updateInfo.release_notes || 'A new release is ready with the latest improvements and fixes.'}
             </p>
 
             {updateError && (
-              <div className="flex items-center gap-1.5 text-rose-500 text-xs font-bold pt-1">
+              <div className="flex flex-wrap items-center gap-1.5 text-rose-500 text-xs font-bold pt-1">
                 <AlertCircle className="w-3.5 h-3.5" />
                 <span>{updateError}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = 'https://lyncost.vercel.app/#download';
+                    openUrl(url).catch(() => window.open(url, '_blank', 'noopener'));
+                  }}
+                  className="underline underline-offset-2 cursor-pointer"
+                >
+                  Download from website instead
+                </button>
               </div>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end shrink-0">
-          {updateInstallSuccess ? (
+          {updateInstallSuccess && viaInstaller ? null : updateInstallSuccess ? (
             <button
               onClick={restartApp}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-950/40 cursor-pointer transition-all animate-pulse"
@@ -94,7 +110,7 @@ export const UpdateBanner: React.FC = () => {
               {isInstallingUpdate ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Downloading & Installing...</span>
+                  <span>{viaInstaller ? 'Downloading update...' : 'Downloading & Installing...'}</span>
                 </>
               ) : (
                 <>

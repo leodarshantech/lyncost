@@ -772,6 +772,8 @@ pub struct AppUpdateInfo {
     pub release_notes: String,
     pub published_at: String,
     pub download_url: String,
+    /// "in_app" (Linux: installs itself), "installer" (Windows: runs the new setup.exe), "none"
+    pub install_mode: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

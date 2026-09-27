@@ -9,6 +9,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Never panic here: a failed migration rolls back and leaves the user's data
             // intact, so show the error in the UI instead of silently crashing on launch.
@@ -35,6 +36,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_startup_status,
             commands::get_trial_status,
+            commands::verify_license_key,
             commands::get_app_settings,
             commands::set_initial_pin,
             commands::verify_pin,

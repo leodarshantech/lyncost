@@ -329,6 +329,61 @@ pub fn verify_pin(state: State<'_, AppState>, pin: String) -> Result<PinVerifyRe
     check_pin_with_lockout(&conn, &pin)
 }
 
+// --- Windows license keys ---
+//
+// Keys are issued by the website: a 9-byte payload signed with Ed25519, base32-encoded as
+// "LYNC2-XXXXXXXXX-...". The app holds only the PUBLIC key, so it can check a key offline
+// but nobody (even with the app's code) can create one without the private key on the server.
+
+const LICENSE_PUBLIC_KEY: [u8; 32] = [
+    243, 11, 32, 116, 193, 200, 230, 4, 12, 241, 190, 35, 16, 132, 79, 207,
+    228, 217, 159, 112, 200, 177, 101, 128, 224, 108, 88, 101, 236, 105, 4, 202,
+];
+
+fn base32_decode(input: &str) -> Option<Vec<u8>> {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let mut bits: u32 = 0;
+    let mut value: u32 = 0;
+    let mut out = Vec::with_capacity(input.len() * 5 / 8);
+    for c in input.bytes() {
+        let v = ALPHABET.iter().position(|&a| a == c)? as u32;
+        value = (value << 5) | v;
+        bits += 5;
+        if bits >= 8 {
+            out.push((value >> (bits - 8)) as u8);
+            bits -= 8;
+            value &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
+fn verify_license_with(public_key: &[u8; 32], key: &str) -> bool {
+    use ed25519_dalek::{Signature, VerifyingKey};
+
+    // Accept any capitalisation and ignore dashes, spaces and line breaks from copy/paste
+    let cleaned: String = key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    let Some(body) = cleaned.strip_prefix("LYNC2") else { return false };
+    let Some(bytes) = base32_decode(body) else { return false };
+    if bytes.len() != 9 + 64 || bytes[0] != 1 {
+        return false;
+    }
+    let Ok(verifying_key) = VerifyingKey::from_bytes(public_key) else { return false };
+    let Ok(sig_bytes) = <[u8; 64]>::try_from(&bytes[9..]) else { return false };
+    verifying_key
+        .verify_strict(&bytes[..9], &Signature::from_bytes(&sig_bytes))
+        .is_ok()
+}
+
+#[tauri::command]
+pub fn verify_license_key(key: String) -> bool {
+    verify_license_with(&LICENSE_PUBLIC_KEY, &key)
+}
+
 #[tauri::command]
 pub fn get_startup_status(state: State<'_, AppState>) -> Option<String> {
     state.startup_error.clone()
@@ -4787,21 +4842,33 @@ pub fn update_notification_settings(
     get_app_settings(state)
 }
 
+/// Desktop notification. Linux uses notify-send (works on every desktop we support);
+/// Windows (and anything else) uses Tauri's notification plugin, since notify-send
+/// doesn't exist there. Failures are ignored: a missed toast must never break the app.
+fn show_os_notification(app: &AppHandle, title: &str, body: &str) {
+    if cfg!(target_os = "linux") {
+        let _ = std::process::Command::new("notify-send")
+            .arg("-a")
+            .arg("Lyncost")
+            .arg("-u")
+            .arg("normal")
+            .arg(title)
+            .arg(body)
+            .output();
+    } else {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app.notification().builder().title(title).body(body).show();
+    }
+}
+
 #[tauri::command(async)]
-pub fn send_os_desktop_notification(title: String, body: String) -> Result<(), String> {
-    let _ = std::process::Command::new("notify-send")
-        .arg("-a")
-        .arg("Lyncost")
-        .arg("-u")
-        .arg("normal")
-        .arg(title)
-        .arg(body)
-        .output();
+pub fn send_os_desktop_notification(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    show_os_notification(&app, &title, &body);
     Ok(())
 }
 
 #[tauri::command(async)]
-pub fn check_and_send_due_reminders(state: State<AppState>) -> Result<Vec<BillReminder>, String> {
+pub fn check_and_send_due_reminders(app: AppHandle, state: State<AppState>) -> Result<Vec<BillReminder>, String> {
     let conn = state.conn();
 
     let (notify_os, advance_days, base_curr, last_check): (
@@ -4892,14 +4959,7 @@ pub fn check_and_send_due_reminders(state: State<AppState>) -> Result<Vec<BillRe
     if !already_notified_today && !alerts_to_send.is_empty() {
         if notify_os == 1 {
             for (title, body) in &alerts_to_send {
-                let _ = std::process::Command::new("notify-send")
-                    .arg("-a")
-                    .arg("Lyncost")
-                    .arg("-u")
-                    .arg("normal")
-                    .arg(title)
-                    .arg(body)
-                    .output();
+                show_os_notification(&app, title, body);
             }
         }
 
@@ -4946,11 +5006,18 @@ fn is_trusted_update_url(url: &str) -> bool {
 }
 
 fn run_curl(args: &[&str]) -> Result<Vec<u8>, String> {
-    let out = std::process::Command::new("curl")
-        .args(["-fsSL", "--proto", "=https", "--tlsv1.2", "--connect-timeout", "10"])
-        .args(args)
-        .output()
-        .map_err(|e| format!("Failed to run curl: {}", e))?;
+    // curl ships with Linux and with Windows 10 (1803+) / 11 as System32\curl.exe
+    let mut cmd = std::process::Command::new("curl");
+    cmd.args(["-fsSL", "--proto", "=https", "--tlsv1.2", "--connect-timeout", "10"])
+        .args(args);
+    #[cfg(windows)]
+    {
+        // Don't flash a console window from the GUI app
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().map_err(|e| format!("Failed to run curl: {}", e))?;
     if !out.status.success() {
         return Err("Download failed. Please check your internet connection.".to_string());
     }
@@ -4973,6 +5040,27 @@ fn find_checksum(sums: &str, file_name: &str) -> Option<String> {
     })
 }
 
+/// Where to look for updates on this platform, from version.json:
+/// Linux installs the tarball in-app; Windows downloads and runs the NSIS setup.exe.
+fn update_target(val: &serde_json::Value) -> Option<(String, String, &'static str)> {
+    if cfg!(target_os = "linux") {
+        let latest = val["version"].as_str()?.to_string();
+        let default_url = format!(
+            "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-{}-linux-x86_64.tar.gz",
+            latest
+        );
+        let url = val["tarball_url"].as_str().unwrap_or(&default_url).to_string();
+        Some((latest, url, "in_app"))
+    } else if cfg!(target_os = "windows") {
+        let win = &val["windows_installer"];
+        let latest = win["version"].as_str().or_else(|| val["version"].as_str())?.to_string();
+        let url = win["setup_exe_url"].as_str()?.to_string();
+        Some((latest, url, "installer"))
+    } else {
+        None
+    }
+}
+
 #[tauri::command(async)]
 pub fn check_app_update() -> Result<AppUpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
@@ -4983,11 +5071,10 @@ pub fn check_app_update() -> Result<AppUpdateInfo, String> {
         release_notes: String::new(),
         published_at: String::new(),
         download_url: String::new(),
+        install_mode: "none".to_string(),
     };
 
-    // The in-app updater installs the Linux tarball into ~/.local/bin; other
-    // platforms update through their own installers.
-    if !cfg!(target_os = "linux") {
+    if !cfg!(target_os = "linux") && !cfg!(target_os = "windows") {
         return Ok(no_update(current_version));
     }
 
@@ -5005,18 +5092,16 @@ pub fn check_app_update() -> Result<AppUpdateInfo, String> {
         Err(_) => return Ok(no_update(current_version)),
     };
 
-    let latest_ver = val["version"].as_str().unwrap_or(&current_version).to_string();
-    let release_notes = val["notes"].as_str().unwrap_or("Performance improvements and bug fixes.").to_string();
-    let published_at = val["release_date"].as_str().unwrap_or("").to_string();
-    let default_url = format!(
-        "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-{}-linux-x86_64.tar.gz",
-        latest_ver
-    );
-    let download_url = val["tarball_url"].as_str().unwrap_or(&default_url).to_string();
-
+    let (latest_ver, download_url, install_mode) = match update_target(&val) {
+        Some(t) => t,
+        None => return Ok(no_update(current_version)),
+    };
     if !is_trusted_update_url(&download_url) {
         return Ok(no_update(current_version));
     }
+
+    let release_notes = val["notes"].as_str().unwrap_or("Performance improvements and bug fixes.").to_string();
+    let published_at = val["release_date"].as_str().unwrap_or("").to_string();
 
     Ok(AppUpdateInfo {
         has_update: is_version_greater(&latest_ver, &current_version),
@@ -5025,18 +5110,70 @@ pub fn check_app_update() -> Result<AppUpdateInfo, String> {
         release_notes,
         published_at,
         download_url,
+        install_mode: install_mode.to_string(),
     })
 }
 
-#[tauri::command(async)]
-pub fn install_app_update(download_url: Option<String>) -> Result<String, String> {
-    if !cfg!(target_os = "linux") {
-        return Err("In-app updates are only available on Linux. Please download the latest installer from the website.".to_string());
+/// Downloads `url` and its SHA256SUMS from the same folder, and returns the package bytes
+/// only if the checksum matches. Shared by the Linux and Windows updaters.
+fn download_verified(url: &str, file_name: &str, max_time_secs: &str) -> Result<Vec<u8>, String> {
+    let sums_url = format!("{}SHA256SUMS", &url[..url.len() - file_name.len()]);
+    let package = run_curl(&["--max-time", max_time_secs, url])?;
+    let sums = run_curl(&["--max-time", "20", &sums_url])
+        .map_err(|_| "Could not download SHA256SUMS to verify the update. Update aborted for safety.".to_string())?;
+    let sums = String::from_utf8_lossy(&sums);
+    let expected = find_checksum(&sums, file_name)
+        .ok_or_else(|| format!("No checksum published for {}. Update aborted for safety.", file_name))?;
+    if sha256_hex(&package) != expected {
+        return Err("Update package failed checksum verification (file corrupted or tampered). Update aborted.".to_string());
     }
+    Ok(package)
+}
 
+/// Windows: download the new setup.exe, verify it, start it, then close Lyncost so the
+/// installer can replace the running program. Data (%APPDATA%) and license are untouched.
+fn install_windows_update(app: &AppHandle, url: &str) -> Result<String, String> {
+    let file_name = url
+        .rsplit('/')
+        .next()
+        .filter(|n| n.ends_with("_x64-setup.exe") && !n.contains(['\\', ':']))
+        .ok_or_else(|| "Update URL does not point to a Lyncost setup.exe".to_string())?
+        .to_string();
+
+    let package = download_verified(url, &file_name, "600")?;
+
+    // Private per-run folder in the user's own temp directory
+    let dir = std::env::temp_dir().join(format!("lyncost-update-{}-{}", std::process::id(), now_unix()));
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create update folder: {}", e))?;
+    let installer = dir.join(&file_name);
+    fs::write(&installer, &package).map_err(|e| format!("Failed to save the installer: {}", e))?;
+
+    std::process::Command::new(&installer)
+        .spawn()
+        .map_err(|e| format!("Could not start the installer: {}", e))?;
+
+    // Give the installer a moment to open, then exit so it can replace lyncost.exe
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        handle.exit(0);
+    });
+
+    Ok("The installer is starting. Lyncost will close so it can update.".to_string())
+}
+
+#[tauri::command(async)]
+pub fn install_app_update(app: AppHandle, download_url: Option<String>) -> Result<String, String> {
     let url = download_url.ok_or_else(|| "No update package URL provided".to_string())?;
     if !is_trusted_update_url(&url) {
         return Err("Untrusted update source. Update binaries must originate from the verified official repository.".to_string());
+    }
+
+    if cfg!(target_os = "windows") {
+        return install_windows_update(&app, &url);
+    }
+    if !cfg!(target_os = "linux") {
+        return Err("Updates for this platform are not available yet. Please download the latest version from the website.".to_string());
     }
 
     let file_name = url
@@ -5045,7 +5182,6 @@ pub fn install_app_update(download_url: Option<String>) -> Result<String, String
         .filter(|n| n.ends_with(".tar.gz"))
         .ok_or_else(|| "Update URL does not point to a .tar.gz package".to_string())?
         .to_string();
-    let sums_url = format!("{}SHA256SUMS", &url[..url.len() - file_name.len()]);
 
     let home = std::env::var("HOME").map_err(|_| "Could not find HOME directory".to_string())?;
     let target_bin_dir = PathBuf::from(&home).join(".local/bin");
@@ -5065,16 +5201,7 @@ pub fn install_app_update(download_url: Option<String>) -> Result<String, String
 
     let result = (|| -> Result<String, String> {
         // 1. Download package + checksum list, verify integrity before extracting
-        let package = run_curl(&["--max-time", "300", &url])?;
-        let sums = run_curl(&["--max-time", "20", &sums_url])
-            .map_err(|_| "Could not download SHA256SUMS to verify the update. Update aborted for safety.".to_string())?;
-        let sums = String::from_utf8_lossy(&sums);
-        let expected = find_checksum(&sums, &file_name)
-            .ok_or_else(|| format!("No checksum published for {}. Update aborted for safety.", file_name))?;
-        let actual = sha256_hex(&package);
-        if actual != expected {
-            return Err("Update package failed checksum verification (file corrupted or tampered). Update aborted.".to_string());
-        }
+        let package = download_verified(&url, &file_name, "300")?;
 
         let tar_file = temp_dir.join("package.tar.gz");
         fs::write(&tar_file, &package).map_err(|e| format!("Failed to save update package: {}", e))?;
@@ -5489,6 +5616,110 @@ mod tests {
         let status = compute_trial_status(&conn).unwrap();
         assert!(!status.is_expired);
         assert_eq!(status.days_remaining, 1);
+    }
+
+    // Test vector produced by the website's real deriveLicenseKey() with a throwaway key pair,
+    // so this proves the website's keys and the app's verifier agree byte-for-byte.
+    const TEST_PUBLIC_KEY: [u8; 32] = [140, 122, 213, 108, 72, 85, 29, 44, 53, 55, 28, 112, 62, 86, 239, 84, 10, 97, 227, 77, 207, 247, 16, 213, 152, 255, 30, 77, 4, 27, 103, 54];
+    const TEST_KEY: &str = "LYNC2-AHQLRS2JG-YXTUEGYM2-EVZ44TTZW-NLF2MCMYN-3YWV7N4ML-PYKCSHB5U-AASCG5VAR-L4RAJOLQ6-6MM5QH72W-QH2DEKULY-5WKQNRL55-OE6LXGPE3-DJIGA3NA2";
+    const TEST_KEY_OTHER_PAYMENT: &str = "LYNC2-AHC4OA7E3-J4CIJ76YY-ANP4RMUU5-KMCACL5QR-QGIRR2VOY-OYZW2AE6Z-GFXI5CVKB-R4JIKZCAF-PQ45X2DBH-NXPR4AODM-6XAF457FW-BX7DBWHUK-7MZKUIOQA";
+
+    #[test]
+    fn license_key_from_website_is_accepted() {
+        assert!(verify_license_with(&TEST_PUBLIC_KEY, TEST_KEY));
+        assert!(verify_license_with(&TEST_PUBLIC_KEY, TEST_KEY_OTHER_PAYMENT));
+    }
+
+    #[test]
+    fn license_key_survives_messy_copy_paste() {
+        let messy = format!("  {}\n", TEST_KEY.to_lowercase().replace('-', " - "));
+        assert!(verify_license_with(&TEST_PUBLIC_KEY, &messy));
+    }
+
+    #[test]
+    fn tampered_or_fake_license_keys_are_rejected() {
+        // change one character in the middle
+        let mut chars: Vec<char> = TEST_KEY.chars().collect();
+        let i = chars.len() / 2;
+        chars[i] = if chars[i] == 'A' { 'B' } else { 'A' };
+        let tampered: String = chars.into_iter().collect();
+        assert!(!verify_license_with(&TEST_PUBLIC_KEY, &tampered));
+
+        // old unsigned format, which any user could previously type
+        assert!(!verify_license_with(&TEST_PUBLIC_KEY, "LYNC-0000-0000-0000"));
+        assert!(!verify_license_with(&TEST_PUBLIC_KEY, "LYNC-B3E2-53AD-548B"));
+        // garbage and truncation
+        assert!(!verify_license_with(&TEST_PUBLIC_KEY, ""));
+        assert!(!verify_license_with(&TEST_PUBLIC_KEY, "LYNC2-AAAAAAAAA"));
+        assert!(!verify_license_with(&TEST_PUBLIC_KEY, &TEST_KEY[..TEST_KEY.len() - 5]));
+    }
+
+    /// Release check: a key issued with the PRODUCTION signing key must verify against the
+    /// public key compiled into the app. Set LYNCOST_PROD_LICENSE_SAMPLE to run it.
+    #[test]
+    fn production_issued_key_verifies_when_provided() {
+        if let Ok(sample) = std::env::var("LYNCOST_PROD_LICENSE_SAMPLE") {
+            assert!(verify_license_key(sample), "production key pair mismatch: website and app keys differ");
+        }
+    }
+
+    #[test]
+    fn license_key_signed_by_another_key_is_rejected() {
+        // The test vector was signed with a throwaway key, not the production key
+        assert!(!verify_license_with(&LICENSE_PUBLIC_KEY, TEST_KEY));
+        assert!(!verify_license_key(TEST_KEY.to_string()));
+    }
+
+    fn sample_version_json() -> serde_json::Value {
+        serde_json::json!({
+            "version": "0.2.0",
+            "notes": "Notes",
+            "tarball_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-0.2.0-linux-x86_64.tar.gz",
+            "windows_installer": {
+                "version": "0.1.9",
+                "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.9_x64-setup.exe"
+            }
+        })
+    }
+
+    #[test]
+    fn update_target_picks_this_platforms_package() {
+        let v = sample_version_json();
+        let target = update_target(&v);
+        if cfg!(target_os = "linux") {
+            let (ver, url, mode) = target.expect("linux target");
+            assert_eq!(ver, "0.2.0");
+            assert!(url.ends_with("lyncost-0.2.0-linux-x86_64.tar.gz"));
+            assert_eq!(mode, "in_app");
+        } else if cfg!(target_os = "windows") {
+            // Windows follows its own installer version, which can lag the Linux release
+            let (ver, url, mode) = target.expect("windows target");
+            assert_eq!(ver, "0.1.9");
+            assert!(url.ends_with("Lyncost_0.1.9_x64-setup.exe"));
+            assert_eq!(mode, "installer");
+        } else {
+            assert!(target.is_none());
+        }
+    }
+
+    #[test]
+    fn update_target_handles_missing_windows_block() {
+        let v = serde_json::json!({ "version": "0.2.0" });
+        let target = update_target(&v);
+        if cfg!(target_os = "windows") {
+            assert!(target.is_none(), "no setup_exe_url means no Windows update, not a crash");
+        } else if cfg!(target_os = "linux") {
+            // falls back to the conventional tarball name
+            assert!(target.unwrap().1.ends_with("lyncost-0.2.0-linux-x86_64.tar.gz"));
+        }
+    }
+
+    #[test]
+    fn update_versions_compare_numerically() {
+        assert!(is_version_greater("0.1.10", "0.1.9"));
+        assert!(is_version_greater("0.2.0", "0.1.9"));
+        assert!(!is_version_greater("0.1.9", "0.1.9"));
+        assert!(!is_version_greater("0.1.8", "0.1.9"));
     }
 
     #[test]

@@ -615,7 +615,7 @@ export const SettingsPage: React.FC = () => {
           <span>Created by <strong className={theme === 'light' ? 'text-emerald-700 font-extrabold' : 'text-emerald-300 font-extrabold'}>leodarshantech</strong></span>
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
-            Made with Fedora Linux 🚀
+            Proudly made with Arch Linux
           </span>
           <span className="font-mono">Lyncost v{__APP_VERSION__} • Native Desktop</span>
         </div>
@@ -653,11 +653,14 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              <div className={`px-3 py-2 rounded-xl border font-mono text-xs tracking-wider font-bold select-all ${
-                theme === 'light'
-                  ? 'bg-slate-100 border-slate-300 text-slate-900'
-                  : 'bg-zinc-950 border-zinc-800 text-amber-300'
-              }`}>
+              <div
+                title={savedLicenseKey}
+                className={`px-3 py-2 rounded-xl border font-mono text-xs tracking-wider font-bold select-all max-w-[14rem] sm:max-w-xs truncate ${
+                  theme === 'light'
+                    ? 'bg-slate-100 border-slate-300 text-slate-900'
+                    : 'bg-zinc-950 border-zinc-800 text-amber-300'
+                }`}
+              >
                 {savedLicenseKey}
               </div>
               <button
@@ -717,7 +720,7 @@ export const SettingsPage: React.FC = () => {
             <p className={`text-xs ${theme === 'light' ? 'text-slate-600' : 'text-zinc-400'}`}>
               {updateInfo?.has_update
                 ? (updateInfo.release_notes || 'A new release is available on GitHub.')
-                : 'You are running the latest compiled native release of Lyncost.'}
+                : 'You are running the latest release of Lyncost. It checks for updates automatically.'}
             </p>
             {updateError && (
               <p className="text-xs text-rose-500 font-bold pt-1">{updateError}</p>
@@ -725,7 +728,11 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            {updateInstallSuccess ? (
+            {updateInstallSuccess && updateInfo?.install_mode === 'installer' ? (
+              <span className={`text-xs font-semibold ${theme === 'light' ? 'text-emerald-700' : 'text-emerald-300'}`}>
+                Installer opened. Lyncost is closing to update.
+              </span>
+            ) : updateInstallSuccess ? (
               <button
                 type="button"
                 onClick={restartApp}
@@ -744,7 +751,7 @@ export const SettingsPage: React.FC = () => {
                 {isInstallingUpdate ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Installing...</span>
+                    <span>{updateInfo?.install_mode === 'installer' ? 'Downloading...' : 'Installing...'}</span>
                   </>
                 ) : (
                   <>
@@ -1525,15 +1532,13 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Footer / Made with Fedora Linux */}
+        {/* Footer / Proudly made with Arch Linux */}
         <div className="pt-6 pb-2 text-center select-none">
           <p className={`text-[11px] font-medium tracking-wide flex items-center justify-center gap-1.5 ${
             theme === 'light' ? 'text-slate-500' : 'text-zinc-500'
           }`}>
-            <span>Crafted with</span>
-            <span className="text-rose-500">❤️</span>
-            <span>on</span>
-            <span className="font-bold text-blue-500 dark:text-blue-400">Fedora Linux</span>
+            <span>Proudly made with</span>
+            <span className="font-bold text-sky-500 dark:text-sky-400">Arch Linux</span>
             <span>• 100% Offline & Private</span>
           </p>
         </div>
