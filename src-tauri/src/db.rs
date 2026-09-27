@@ -253,6 +253,30 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), String> {
         tx.commit().map_err(|e| format!("Failed to commit migration 008: {}", e))?;
     }
 
+    if latest_version < 9 {
+        let tx = conn.transaction().map_err(|e| format!("Failed to start migration 009 transaction: {}", e))?;
+
+        for statement in include_str!("../migrations/009_trial.sql").split(';') {
+            let stmt = statement.trim();
+            if stmt.is_empty() {
+                continue;
+            }
+            if let Err(e) = tx.execute(stmt, []) {
+                let err_str = e.to_string();
+                if !err_str.contains("duplicate column name") {
+                    return Err(format!("Failed to execute migration 009 statement: {}", err_str));
+                }
+            }
+        }
+
+        tx.execute(
+            "INSERT OR REPLACE INTO schema_migrations (version) VALUES (9);",
+            [],
+        ).map_err(|e| format!("Failed to record migration 009: {}", e))?;
+
+        tx.commit().map_err(|e| format!("Failed to commit migration 009: {}", e))?;
+    }
+
     seed_defaults(conn)?;
 
     Ok(())

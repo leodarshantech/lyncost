@@ -4,9 +4,19 @@ import { Key, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, Laptop, Refr
 
 interface LicenseActivationScreenProps {
   onActivated: () => void;
+  /** The 14-day trial is over: explain that data is safe and a key unlocks it again */
+  trialExpired?: boolean;
+  /** Shown during an active trial: lets the user go back to the app without a key */
+  onClose?: () => void;
+  trialDaysRemaining?: number;
 }
 
-export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = ({ onActivated }) => {
+export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = ({
+  onActivated,
+  trialExpired = false,
+  onClose,
+  trialDaysRemaining,
+}) => {
   const [licenseKey, setLicenseKey] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isActivating, setIsActivating] = useState(false);
@@ -97,12 +107,14 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
             <span>Windows Edition • Lifetime License</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-            {isSuccess ? 'Activation Successful!' : 'Activate Lyncost'}
+            {isSuccess ? 'Activation Successful!' : trialExpired ? 'Your free trial has ended' : 'Activate Lyncost'}
           </h2>
           <p className="text-xs text-zinc-400 max-w-sm mx-auto leading-relaxed">
             {isSuccess
               ? 'Your perpetual lifetime license is verified. Launching your private offline dashboard...'
-              : 'Enter the 16-character license key provided on your purchase screen to unlock the software.'}
+              : trialExpired
+                ? 'Thanks for trying Lyncost! Your data is safe on this PC and nothing has been deleted. Enter a license key to keep using it.'
+                : 'Enter the 16-character license key provided on your purchase screen to unlock the software.'}
           </p>
         </div>
 
@@ -151,11 +163,22 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
           </div>
         )}
 
+        {!isSuccess && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 px-4 rounded-xl border border-zinc-800 text-zinc-300 hover:bg-zinc-800/60 text-xs font-semibold transition-colors cursor-pointer"
+          >
+            Continue free trial
+            {typeof trialDaysRemaining === 'number' ? ` (${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} left)` : ''}
+          </button>
+        )}
+
         {/* Footer info & Links */}
         {!isSuccess && (
           <div className="pt-4 border-t border-zinc-800/80 space-y-2 text-[11px] text-zinc-500">
             <p className="flex items-center justify-center gap-1">
-              Don't have a license key?{' '}
+              {trialExpired ? 'Need a license key?' : "Don't have a license key?"}{' '}
               <button
                 type="button"
                 onClick={() => {

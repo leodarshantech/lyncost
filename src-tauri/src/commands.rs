@@ -22,7 +22,7 @@ use crate::models::{
     BillReminder, UpdateNotificationSettingsPayload, AppUpdateInfo,
     DebtTransactionItem, RecordDebtPaymentPayload, DrawDebtFundsPayload, SpendFromDebtPayload,
     PaymentMethodItem, CreatePaymentMethodPayload, UpdatePaymentMethodPayload,
-    PinVerifyResult,
+    PinVerifyResult, TrialStatus,
 };
 
 // --- Exchange Rate Helper ---
@@ -332,6 +332,49 @@ pub fn verify_pin(state: State<'_, AppState>, pin: String) -> Result<PinVerifyRe
 #[tauri::command]
 pub fn get_startup_status(state: State<'_, AppState>) -> Option<String> {
     state.startup_error.clone()
+}
+
+const TRIAL_DAYS: i64 = 14;
+
+/// Windows trial: starts on first call and is stored in the database as a Unix timestamp
+/// (not localStorage), so clearing the browser cache alone cannot restart it, and there is
+/// no timezone ambiguity to parse back out. The frontend only enforces this on Windows;
+/// Linux and an already-activated Windows install ignore it entirely.
+fn compute_trial_status(conn: &Connection) -> Result<TrialStatus, String> {
+    let existing: Option<String> = conn
+        .query_row("SELECT trial_started_at FROM app_settings WHERE id = 1", [], |r| r.get(0))
+        .optional()
+        .unwrap_or(None)
+        .flatten();
+
+    let started_epoch = match existing.and_then(|s| s.trim().parse::<i64>().ok()).filter(|&e| e > 0) {
+        Some(e) => e,
+        None => {
+            let now = now_unix();
+            conn.execute(
+                "UPDATE app_settings SET trial_started_at = ?1 WHERE id = 1",
+                params![now.to_string()],
+            ).map_err(|e| e.to_string())?;
+            now
+        }
+    };
+
+    let elapsed_days = (now_unix() - started_epoch) / 86_400;
+    let days_remaining = (TRIAL_DAYS - elapsed_days).max(0);
+
+    Ok(TrialStatus {
+        started_at: started_epoch.to_string(),
+        days_total: TRIAL_DAYS,
+        days_remaining,
+        is_expired: days_remaining <= 0,
+    })
+}
+
+#[tauri::command]
+pub fn get_trial_status(state: State<'_, AppState>) -> Result<TrialStatus, String> {
+    let conn = state.conn();
+    let _ = crate::db::seed_defaults(&conn);
+    compute_trial_status(&conn)
 }
 
 #[tauri::command]
@@ -5392,6 +5435,60 @@ mod tests {
         );
         assert_eq!(find_checksum(sums, "lyncost-0.1.6-linux-x86_64.tar"), None);
         assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn trial_starts_on_first_check_and_counts_down() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations(&mut conn).unwrap();
+
+        let first = compute_trial_status(&conn).unwrap();
+        assert_eq!(first.days_total, 14);
+        assert_eq!(first.days_remaining, 14);
+        assert!(!first.is_expired);
+
+        // Calling again must not reset the clock: same start time, same remaining days
+        let second = compute_trial_status(&conn).unwrap();
+        assert_eq!(second.started_at, first.started_at);
+        assert_eq!(second.days_remaining, 14);
+    }
+
+    #[test]
+    fn trial_expires_after_14_days_and_stays_expired() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations(&mut conn).unwrap();
+
+        // Backdate the trial start by 15 days, simulating an old install
+        let fifteen_days_ago = now_unix() - 15 * 86_400;
+        conn.execute(
+            "UPDATE app_settings SET trial_started_at = ?1 WHERE id = 1",
+            params![fifteen_days_ago.to_string()],
+        ).unwrap();
+
+        let status = compute_trial_status(&conn).unwrap();
+        assert!(status.is_expired);
+        assert_eq!(status.days_remaining, 0);
+
+        // Rerunning must not "revive" an expired trial by resetting the start date
+        let again = compute_trial_status(&conn).unwrap();
+        assert!(again.is_expired);
+        assert_eq!(again.started_at, fifteen_days_ago.to_string());
+    }
+
+    #[test]
+    fn trial_on_day_13_is_not_yet_expired() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations(&mut conn).unwrap();
+
+        let thirteen_days_ago = now_unix() - 13 * 86_400;
+        conn.execute(
+            "UPDATE app_settings SET trial_started_at = ?1 WHERE id = 1",
+            params![thirteen_days_ago.to_string()],
+        ).unwrap();
+
+        let status = compute_trial_status(&conn).unwrap();
+        assert!(!status.is_expired);
+        assert_eq!(status.days_remaining, 1);
     }
 
     #[test]

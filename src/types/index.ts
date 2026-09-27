@@ -672,6 +672,15 @@ export interface PinVerifyResult {
   remaining_attempts: number;
 }
 
+/** Windows 14-day trial, tracked in the database by get_trial_status. */
+export interface TrialStatus {
+  /** Unix timestamp (seconds) of the first launch */
+  started_at: string;
+  days_total: number;
+  days_remaining: number;
+  is_expired: boolean;
+}
+
 export interface AppUpdateInfo {
   has_update: boolean;
   current_version: string;

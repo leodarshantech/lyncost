@@ -774,6 +774,14 @@ pub struct AppUpdateInfo {
     pub download_url: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TrialStatus {
+    pub started_at: String,
+    pub days_total: i64,
+    pub days_remaining: i64,
+    pub is_expired: bool,
+}
+
 // --- Part 6: Custom & Regional Payment Methods ---
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -34,6 +34,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_startup_status,
+            commands::get_trial_status,
             commands::get_app_settings,
             commands::set_initial_pin,
             commands::verify_pin,

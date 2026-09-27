@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from './store/useAppStore';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
@@ -8,6 +9,8 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { PinScreen } from './components/PinScreen';
 import { SetupWizard } from './components/SetupWizard';
 import { LicenseActivationScreen } from './components/LicenseActivationScreen';
+import { TrialBanner } from './components/TrialBanner';
+import type { TrialStatus } from './types';
 import { RefreshCw, Coins, ShieldCheck, AlertTriangle } from 'lucide-react';
 import './App.css';
 
@@ -60,6 +63,30 @@ export const App: React.FC = () => {
       return false;
     }
   });
+
+  // Windows 14-day trial (unlicensed Windows installs only). null = still checking.
+  const needsLicense = isWindows && !isLicenseActivated;
+  const [trial, setTrial] = React.useState<TrialStatus | null>(null);
+  const [isActivationOpen, setIsActivationOpen] = React.useState(false);
+
+  useEffect(() => {
+    if (!needsLicense) return;
+    let cancelled = false;
+    invoke<TrialStatus>('get_trial_status')
+      .then((status) => {
+        if (!cancelled) setTrial(status);
+      })
+      .catch(() => {
+        // Trial can't be read (e.g. database failed to open, or browser preview): ask for a key
+        if (!cancelled) setTrial({ started_at: '', days_total: 14, days_remaining: 0, is_expired: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsLicense]);
+
+  // Shortcuts are disabled whenever a license screen is covering the app
+  const isLicenseGateShown = needsLicense && (!trial || trial.is_expired || isActivationOpen);
 
   const [isQuickTxnOpen, setIsQuickTxnOpen] = React.useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = React.useState(false);
@@ -137,7 +164,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Do not trigger global shortcuts if setup wizard is open or Windows license activation is pending
-      if (isSetupWizardOpen || (isWindows && !isLicenseActivated)) {
+      if (isSetupWizardOpen || isLicenseGateShown) {
         return;
       }
       // Ctrl+L or Cmd+L locks app immediately if PIN is configured
@@ -168,7 +195,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isQuickTxnOpen, isCommandPaletteOpen, isSetupWizardOpen, isWindows, isLicenseActivated, settings?.has_pin, lockApp]);
+  }, [isQuickTxnOpen, isCommandPaletteOpen, isSetupWizardOpen, isLicenseGateShown, settings?.has_pin, lockApp]);
 
   const handleQuickTxnSaved = React.useCallback(async () => {
     await Promise.all([
@@ -179,22 +206,15 @@ export const App: React.FC = () => {
     ]);
   }, [loadTransactions, loadMonthSummary, loadAccounts, loadNetWorthSummary]);
 
-  // On Windows (or during developer preview), gate access behind license activation immediately
-  if (isWindows && !isLicenseActivated) {
-    return (
-      <LicenseActivationScreen
-        onActivated={() => {
-          setIsLicenseActivated(true);
-          setIsQuickTxnOpen(false);
-          setIsCommandPaletteOpen(false);
-          if (typeof document !== 'undefined') {
-            (document.activeElement as HTMLElement)?.blur();
-          }
-          setIsSetupWizardOpen(true);
-        }}
-      />
-    );
-  }
+  const handleLicenseActivated = () => {
+    setIsLicenseActivated(true);
+    setIsActivationOpen(false);
+    setIsQuickTxnOpen(false);
+    setIsCommandPaletteOpen(false);
+    if (typeof document !== 'undefined') {
+      (document.activeElement as HTMLElement)?.blur();
+    }
+  };
 
   if (startupError) {
     return (
@@ -218,7 +238,12 @@ export const App: React.FC = () => {
     );
   }
 
-  if (isLoading) {
+  // Trial over on an unlicensed Windows install: ask for a key (data is untouched)
+  if (needsLicense && trial?.is_expired) {
+    return <LicenseActivationScreen trialExpired onActivated={handleLicenseActivated} />;
+  }
+
+  if (isLoading || (needsLicense && !trial)) {
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white select-none">
         <div className="w-14 h-14 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center mb-4 text-purple-400 shadow-xl shadow-purple-950/40">
@@ -245,6 +270,9 @@ export const App: React.FC = () => {
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
       />
       <main className="flex-1 h-full overflow-y-auto p-6 sm:p-8 max-w-7xl custom-scrollbar">
+        {needsLicense && trial && !trial.is_expired && (
+          <TrialBanner daysRemaining={trial.days_remaining} onActivate={() => setIsActivationOpen(true)} />
+        )}
         <UpdateBanner />
         <React.Suspense
           fallback={
@@ -307,6 +335,15 @@ export const App: React.FC = () => {
           localStorage.setItem('lyncost_wizard_completed', 'true');
         }}
       />
+
+      {/* Enter a license key during the trial without leaving the app */}
+      {isActivationOpen && needsLicense && trial && !trial.is_expired && (
+        <LicenseActivationScreen
+          onActivated={handleLicenseActivated}
+          onClose={() => setIsActivationOpen(false)}
+          trialDaysRemaining={trial.days_remaining}
+        />
+      )}
 
       {/* Privacy Shield Overlay when window unfocused */}
       {isWindowBlurred && (
