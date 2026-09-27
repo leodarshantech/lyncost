@@ -1,15 +1,15 @@
 {
-  "version": "0.1.8",
+  "version": "0.1.9",
   "release_date": "2026-09-27",
-  "notes": "Windows: free 14-day trial with every feature unlocked. Enter your license key any time from the trial banner; your data is kept when the trial ends. The app now always shows its correct version.",
-  "tarball_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-0.1.8-linux-x86_64.tar.gz",
+  "notes": "Windows now shows update notices and installs updates in one click. Bill reminder notifications now work on Windows. License keys are digitally signed and cannot be forged.",
+  "tarball_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-0.1.9-linux-x86_64.tar.gz",
   "windows_installer": {
-    "version": "0.1.8",
+    "version": "0.1.9",
     "release_date": "2026-09-27",
     "zip_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost-Windows-Installer.zip",
-    "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.8_x64-setup.exe",
-    "msi_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.8_x64_en-US.msi",
-    "sha256": "74974f1c96579323ea7117dcabc139cc302defb4a89bb692e57fd2faddc22066"
+    "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.9_x64-setup.exe",
+    "msi_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.9_x64_en-US.msi",
+    "sha256": "18491edcd4ad1bfb35dca004629979f48ee37ee6ee375990e849394223263dfe"
   },
   "mobile_beta": {
     "version": "0.2.1",

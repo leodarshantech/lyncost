@@ -5722,6 +5722,26 @@ mod tests {
         assert!(!is_version_greater("0.1.8", "0.1.9"));
     }
 
+    /// Release check against the LIVE published files (network): the Linux tarball and the
+    /// Windows setup.exe named in version.json must download and match SHA256SUMS exactly as
+    /// the in-app updaters will. Run after publishing: cargo test live_release -- --ignored
+    #[test]
+    #[ignore]
+    fn live_release_packages_verify_like_the_updater() {
+        let body = run_curl(&["--max-time", "15", "https://raw.githubusercontent.com/leodarshantech/lyncost/main/version.json"]).unwrap();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        for (url, suffix) in [
+            (val["tarball_url"].as_str().unwrap(), ".tar.gz"),
+            (val["windows_installer"]["setup_exe_url"].as_str().unwrap(), "_x64-setup.exe"),
+        ] {
+            assert!(is_trusted_update_url(url), "untrusted {}", url);
+            let name = url.rsplit('/').next().unwrap();
+            assert!(name.ends_with(suffix));
+            let bytes = download_verified(url, name, "300").unwrap_or_else(|e| panic!("{}: {}", name, e));
+            assert!(bytes.len() > 1_000_000, "{} suspiciously small", name);
+        }
+    }
+
     #[test]
     fn update_urls_must_come_from_official_repo() {
         assert!(is_trusted_update_url("https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/x.tar.gz"));
