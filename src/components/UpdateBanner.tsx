@@ -80,7 +80,7 @@ export const UpdateBanner: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    const url = 'https://lyncost.vercel.app/#download';
+                    const url = 'https://lyncost.wintershogun.com/#download';
                     openUrl(url).catch(() => window.open(url, '_blank', 'noopener'));
                   }}
                   className="underline underline-offset-2 cursor-pointer"

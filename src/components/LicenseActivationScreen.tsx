@@ -50,7 +50,7 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
       setIsActivating(false);
       setError(
         cleaned.startsWith('LYNC-') && cleaned.length <= 19
-          ? 'This is an older-format key. Get your updated key at lyncost.vercel.app/license using your payment ID.'
+          ? 'This is an older-format key. Get your updated key at lyncost.wintershogun.com/license using your payment ID.'
           : 'This license key is not valid. Please copy the whole key from your purchase screen (it starts with LYNC2-).',
       );
       return;
@@ -106,7 +106,7 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
               ? 'Your perpetual lifetime license is verified. Launching your private offline dashboard...'
               : trialExpired
                 ? 'Thanks for trying Lyncost! Your data is safe on this PC and nothing has been deleted. Enter a license key to keep using it.'
-                : 'Paste the license key from your purchase screen to unlock the software. Lost it? Recover it at lyncost.vercel.app/license.'}
+                : 'Paste the license key from your purchase screen to unlock the software. Lost it? Recover it at lyncost.wintershogun.com/license.'}
           </p>
         </div>
 
@@ -179,8 +179,8 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
                 type="button"
                 onClick={() => {
                   // Webview links with target=_blank do nothing; open in the system browser
-                  openUrl('https://lyncost.vercel.app').catch(() => {
-                    window.open('https://lyncost.vercel.app', '_blank', 'noopener');
+                  openUrl('https://lyncost.wintershogun.com').catch(() => {
+                    window.open('https://lyncost.wintershogun.com', '_blank', 'noopener');
                   });
                 }}
                 className="text-emerald-400 hover:underline inline-flex items-center gap-0.5 font-medium cursor-pointer"

@@ -8,7 +8,7 @@ interface TrialBannerProps {
   onActivate: () => void;
 }
 
-const PURCHASE_URL = 'https://lyncost.vercel.app/#download';
+const PURCHASE_URL = 'https://lyncost.wintershogun.com/#download';
 
 /** Windows-only: shown at the top of the app while the 14-day trial is running. */
 export const TrialBanner: React.FC<TrialBannerProps> = ({ daysRemaining, onActivate }) => {

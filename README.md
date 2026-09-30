@@ -10,7 +10,7 @@
 [![Android Beta](https://img.shields.io/badge/Android%20Beta-v0.2.1-3DDC84.svg?logo=android&logoColor=white)](dist-packages/lyncost-mobile.apk)
 [![Built with: Tauri v2](https://img.shields.io/badge/Built%20with-Tauri%20v2-24C8D8.svg)](https://tauri.app/)
 [![Architecture & Guide](https://img.shields.io/badge/Documentation-Project%20Guide-8A2BE2.svg)](PROJECT_GUIDE.md)
-[![Donate / Sponsor](https://img.shields.io/badge/Donate-Support%20Lyncost-ff69b4.svg?logo=heart&logoColor=white)](https://lyncost.vercel.app/#donate)
+[![Donate / Sponsor](https://img.shields.io/badge/Donate-Support%20Lyncost-ff69b4.svg?logo=heart&logoColor=white)](https://lyncost.wintershogun.com/#donate)
 
 *Modeled on the productivity of top personal finance suites, built completely local, private, and bloat-free.*
 
@@ -217,7 +217,7 @@ To protect code ownership and legal clarity, **external pull requests are not ac
 
 Lyncost is completely free for personal use on Linux, with zero telemetry, zero advertising, and zero data harvesting. If you enjoy using Lyncost or want to accelerate development of the Android and macOS companion editions, you can support development:
 
-👉 **[Donate / Support via UPI, Google Pay & Cards](https://lyncost.vercel.app/#donate)**
+👉 **[Donate / Support via UPI, Google Pay & Cards](https://lyncost.wintershogun.com/#donate)**
 
 Direct Developer Contact: `darshantech@proton.me`
 

@@ -7,7 +7,7 @@
 
 * **Application Name:** Lyncost
 * **Repository:** [`leodarshantech/lyncost`](https://github.com/leodarshantech/lyncost)
-* **Website:** [`lyncost.vercel.app`](https://lyncost.vercel.app) ([`leodarshantech/lyncost-website`](https://github.com/leodarshantech/lyncost-website))
+* **Website:** [`lyncost.wintershogun.com`](https://lyncost.wintershogun.com) ([`leodarshantech/lyncost-website`](https://github.com/leodarshantech/lyncost-website))
 * **License:** Source-Available & Personal Use License (Proprietary / All Rights Reserved)
 * **Philosophy:** 100% Offline-First • Zero Telemetry • Double-Entry SQLite Ledger • Private Financial Vault
 * **Target Platform:** Native Linux Desktop (x86_64, Wayland & X11)
@@ -147,7 +147,7 @@ git push origin main
 | **Apple-Inspired Design System** | Fluid Day and Night modes with high-contrast text, subtle neon royal purple border accents, and neumorphic cards. |
 | **Single Universal Installer** | Removed `.deb`, `.pkg.tar.zst`, `.flatpak`, and Windows `.exe`/`.msi` packages. Replaced with single terminal curl install & uninstall scripts. |
 | **GitHub Releases Cleanup** | Cleaned release `v0.1.0`, purged legacy package assets, synced repository "About" description, tags/topics, and website URL. |
-| **Buy Me a Coffee Widget** | Embedded floating support widget on the official website ([`lyncost.vercel.app`](https://lyncost.vercel.app)). |
+| **Buy Me a Coffee Widget** | Embedded floating support widget on the official website ([`lyncost.wintershogun.com`](https://lyncost.wintershogun.com)). |
 | **In-App Auto Updater** | Implemented background update check, top banner notification, non-root binary replacement, and application restart. |
 | **Version v0.1.1 Release** | Bumped version to `0.1.1`, added `v0.1.1` badges in Sidebar and Dashboard, and introduced the **Privacy Mode** balance masking toggle (`••••••`). |
 
