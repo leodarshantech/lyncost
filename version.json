@@ -1,15 +1,15 @@
 {
-  "version": "0.1.9",
-  "release_date": "2026-09-27",
-  "notes": "Windows now shows update notices and installs updates in one click. Bill reminder notifications now work on Windows. License keys are digitally signed and cannot be forged.",
-  "tarball_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-0.1.9-linux-x86_64.tar.gz",
+  "version": "0.1.10",
+  "release_date": "2026-10-01",
+  "notes": "Bundled the app's own font instead of relying on whatever font each OS happened to substitute — Linux and Windows now render UI text identically.",
+  "tarball_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/lyncost-0.1.10-linux-x86_64.tar.gz",
   "windows_installer": {
-    "version": "0.1.9",
-    "release_date": "2026-09-27",
+    "version": "0.1.10",
+    "release_date": "2026-10-01",
     "zip_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost-Windows-Installer.zip",
-    "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.9_x64-setup.exe",
-    "msi_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.9_x64_en-US.msi",
-    "sha256": "18491edcd4ad1bfb35dca004629979f48ee37ee6ee375990e849394223263dfe"
+    "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.10_x64-setup.exe",
+    "msi_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.10_x64_en-US.msi",
+    "sha256": "9afa34ee8a436357eabbdd7d25401c7ec37eafdaa904492de6b76b34db5a530e"
   },
   "mobile_beta": {
     "version": "0.2.1",
