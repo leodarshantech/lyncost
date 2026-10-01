@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Bundled, not loaded from the OS or a network request — the old stack relied entirely on
+   whatever font each platform's webview happened to substitute (Segoe UI on Windows vs.
+   whatever Linux's fontconfig resolved "sans-serif" to on the dev machine), which is why
+   the UI looked meaningfully different — different weight/x-height — on Windows vs Linux
+   despite being the exact same CSS. One bundled font file means both platforms render
+   identically, and it keeps the app's "zero network calls" privacy guarantee intact. */
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/geist-variable.woff2') format('woff2');
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -42,7 +56,7 @@ html, body, #root {
   overflow: hidden;
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   user-select: none;
   -webkit-user-select: none;
 }
