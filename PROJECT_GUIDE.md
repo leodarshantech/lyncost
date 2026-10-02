@@ -129,6 +129,21 @@ bash packaging/build_packages.sh
 ```
 *This compiles the optimized release binary and bundles `dist-packages/lyncost-0.1.2-linux-x86_64.tar.gz` alongside updated `dist-packages/SHA256SUMS`.*
 
+### Step 2b: macOS build (GitHub Actions)
+The macOS `.dmg` is built on GitHub's Apple Silicon runner as a **universal** binary (Intel + Apple Silicon), because an Intel Hackintosh/Mac cannot produce or test the arm64 half.
+1. Push to `main` (or run **Build macOS Release** by hand from the Actions tab). The workflow runs the frontend and Rust tests, builds `Lyncost_<version>_universal.dmg`, smoke-tests it (starts the app, checks the database and startup backup) and uploads it as the `Lyncost-macOS-Universal` artifact together with `SHA256SUMS-macos.txt`.
+2. Download the artifact and copy the `.dmg` into `dist-packages/`. Append its line from `SHA256SUMS-macos.txt` to `dist-packages/SHA256SUMS` (the in-app updater refuses a package without a matching checksum line).
+3. Add the manifest block to `version.json`:
+   ```json
+   "macos_installer": {
+     "version": "0.1.2",
+     "release_date": "YYYY-MM-DD",
+     "dmg_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.2_universal.dmg",
+     "sha256": "<sha256 of the dmg>"
+   }
+   ```
+The macOS edition is **paid like Windows**: 14-day trial, then a license key (same `LYNC2-...` keys, verified offline). It is **ad-hoc signed but not notarized** (no Apple Developer account), so first-time installs need the one-time *Open Anyway* step documented in the README. Updates fetched by the app itself carry no quarantine flag and do not prompt.
+
 ### Step 3: Commit and Push to GitHub
 ```bash
 git add -A

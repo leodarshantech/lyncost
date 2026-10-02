@@ -47,16 +47,18 @@ export const App: React.FC = () => {
 
   const theme = useAppStore(state => state.theme);
 
-  // Detect Windows vs Linux (or ?license_test=1 for developer preview).
-  // Match the explicit "Windows" token; a loose /win/i also matches unrelated strings.
+  // Windows and macOS are paid (14-day trial, then a license key); Linux is free.
+  // Also ?license_test=1 for developer preview. Match explicit tokens: a loose /win/i also
+  // matches unrelated strings. macOS's WebView reports "Macintosh" / "Mac OS X".
   const isLicenseTest = typeof window !== 'undefined' && window.location.search.includes('license_test');
-  const isWindowsPlatform = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent || '');
-  const isWindows = isWindowsPlatform || isLicenseTest;
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  const isPaidPlatform = /Windows/i.test(userAgent) || /Macintosh|Mac OS X/i.test(userAgent);
+  const needsLicensePlatform = isPaidPlatform || isLicenseTest;
   const [isLicenseActivated, setIsLicenseActivated] = React.useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     if (isLicenseTest) return false;
-    // On Linux / non-Windows, Lyncost is free
-    if (!isWindowsPlatform) return true;
+    // On Linux, Lyncost is free
+    if (!isPaidPlatform) return true;
     try {
       return localStorage.getItem('lyncost_license_activated') === 'true';
     } catch {
@@ -64,8 +66,8 @@ export const App: React.FC = () => {
     }
   });
 
-  // Windows 14-day trial (unlicensed Windows installs only). null = still checking.
-  const needsLicense = isWindows && !isLicenseActivated;
+  // 14-day trial (unlicensed Windows and macOS installs only). null = still checking.
+  const needsLicense = needsLicensePlatform && !isLicenseActivated;
   const [trial, setTrial] = React.useState<TrialStatus | null>(null);
   const [isActivationOpen, setIsActivationOpen] = React.useState(false);
 
@@ -171,7 +173,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Do not trigger global shortcuts if setup wizard is open or Windows license activation is pending
+      // Do not trigger global shortcuts if setup wizard is open or license activation is pending
       if (isSetupWizardOpen || isLicenseGateShown) {
         return;
       }
@@ -246,7 +248,7 @@ export const App: React.FC = () => {
     );
   }
 
-  // Trial over on an unlicensed Windows install: ask for a key (data is untouched)
+  // Trial over on an unlicensed Windows/macOS install: ask for a key (data is untouched)
   if (needsLicense && trial?.is_expired) {
     return <LicenseActivationScreen trialExpired onActivated={handleLicenseActivated} />;
   }

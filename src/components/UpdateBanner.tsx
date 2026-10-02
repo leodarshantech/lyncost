@@ -19,7 +19,7 @@ export const UpdateBanner: React.FC = () => {
     return null;
   }
 
-  // Windows updates by running the new installer; Linux replaces itself in place
+  // Windows and macOS update by opening the new installer; Linux replaces itself in place
   const viaInstaller = updateInfo.install_mode === 'installer';
 
   return (

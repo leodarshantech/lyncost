@@ -10,7 +10,7 @@ interface TrialBannerProps {
 
 const PURCHASE_URL = 'https://lyncost.wintershogun.com/#download';
 
-/** Windows-only: shown at the top of the app while the 14-day trial is running. */
+/** Windows and macOS: shown at the top of the app while the 14-day trial is running. */
 export const TrialBanner: React.FC<TrialBannerProps> = ({ daysRemaining, onActivate }) => {
   const theme = useAppStore(state => state.theme);
   const isLight = theme === 'light';

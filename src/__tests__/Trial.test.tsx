@@ -77,3 +77,66 @@ describe('Windows 14-day trial', () => {
     expect(screen.queryByText('Your free trial has ended')).toBeNull();
   });
 });
+
+describe('macOS 14-day trial', () => {
+  const macAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)';
+
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    Object.defineProperty(window.navigator, 'userAgent', { value: macAgent, configurable: true });
+    localStorage.clear();
+    localStorage.setItem('lyncost_wizard_completed', 'true');
+    useAppStore.setState({ isUnlocked: false, isLoading: true, settings: null, error: null, startupError: null });
+  });
+
+  afterEach(() => {
+    cleanup();
+    clearMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens the full app with a countdown banner during the trial', async () => {
+    mockBackend({ started_at: '1', days_total: 14, days_remaining: 10, is_expired: false });
+    render(<App />);
+    expect(await screen.findByText(/Free trial: 10 days left/)).toBeTruthy();
+  });
+
+  it('asks for a key once the trial has ended, and labels the edition macOS', async () => {
+    mockBackend({ started_at: '1', days_total: 14, days_remaining: 0, is_expired: true });
+    render(<App />);
+    expect(await screen.findByText('Your free trial has ended')).toBeTruthy();
+    expect(screen.getByText(/macOS Edition/)).toBeTruthy();
+  });
+
+  it('never shows the trial to an activated Mac install', async () => {
+    localStorage.setItem('lyncost_license_activated', 'true');
+    mockBackend({ started_at: '1', days_total: 14, days_remaining: 0, is_expired: true });
+    render(<App />);
+    expect(await screen.findByText('Financial Dashboard')).toBeTruthy();
+    expect(screen.queryByText(/Free trial/)).toBeNull();
+  });
+});
+
+describe('Linux stays free', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    Object.defineProperty(window.navigator, 'userAgent', { value: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15', configurable: true });
+    localStorage.clear();
+    localStorage.setItem('lyncost_wizard_completed', 'true');
+    useAppStore.setState({ isUnlocked: false, isLoading: true, settings: null, error: null, startupError: null });
+  });
+
+  afterEach(() => {
+    cleanup();
+    clearMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('never asks for a license or shows a trial', async () => {
+    mockBackend({ started_at: '1', days_total: 14, days_remaining: 0, is_expired: true });
+    render(<App />);
+    expect(await screen.findByText('Financial Dashboard')).toBeTruthy();
+    expect(screen.queryByText(/Free trial/)).toBeNull();
+    expect(screen.queryByText('Your free trial has ended')).toBeNull();
+  });
+});

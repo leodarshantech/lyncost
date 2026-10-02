@@ -1,7 +1,7 @@
 [package]
 name = "lyncost"
 version = "0.1.10"
-description = "Lyncost - 100% Offline, Privacy-First Personal Finance & Investment Tracker for Linux"
+description = "Lyncost - 100% Offline, Privacy-First Personal Finance & Investment Tracker"
 authors = ["leodarshantech <leodarshantech@users.noreply.github.com>"]
 license = "SEE LICENSE IN LICENSE"
 repository = "https://github.com/leodarshantech/lyncost"

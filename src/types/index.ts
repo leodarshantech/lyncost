@@ -672,7 +672,7 @@ export interface PinVerifyResult {
   remaining_attempts: number;
 }
 
-/** Windows 14-day trial, tracked in the database by get_trial_status. */
+/** Windows/macOS 14-day trial, tracked in the database by get_trial_status. */
 export interface TrialStatus {
   /** Unix timestamp (seconds) of the first launch */
   started_at: string;
@@ -688,7 +688,7 @@ export interface AppUpdateInfo {
   release_notes: string;
   published_at: string;
   download_url: string;
-  /** "in_app" (Linux installs itself), "installer" (Windows runs the new setup.exe), "none" */
+  /** "in_app" (Linux installs itself), "installer" (Windows runs the new setup.exe, macOS opens the new .dmg), "none" */
   install_mode: 'in_app' | 'installer' | 'none';
 }
 
