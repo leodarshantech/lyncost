@@ -2,19 +2,11 @@ name: Build macOS Release
 
 on:
   workflow_dispatch: # Allows manual trigger from GitHub Actions web tab
-    inputs:
-      publish:
-        description: 'Also publish the .dmg to dist-packages/ and version.json'
-        type: boolean
-        default: false
   push:
     branches:
       - main
     tags:
       - 'v*'
-
-permissions:
-  contents: write # only used by the publish step below
 
 jobs:
   build-macos:
@@ -110,50 +102,3 @@ jobs:
           path: out/*
           if-no-files-found: error
           retention-days: 14
-
-      # Release builds only: a push to main whose commit message starts with "release:", a
-      # v* tag, or a manual run with "publish" ticked. Puts the .dmg where the in-app updater
-      # and the website expect it, exactly like the Linux and Windows packages:
-      #   dist-packages/Lyncost_<version>_universal.dmg + its line in dist-packages/SHA256SUMS
-      #   version.json -> "macos_installer"
-      # Pushes made with GITHUB_TOKEN never start another workflow run, so this cannot loop.
-      - name: Publish .dmg to dist-packages and version.json
-        if: >-
-          (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'release:') || startsWith(github.ref, 'refs/tags/v'))) ||
-          (github.event_name == 'workflow_dispatch' && inputs.publish)
-        run: |
-          set -e
-          version=$(node -p "require('./package.json').version")
-          dmg="Lyncost_${version}_universal.dmg"
-          cp "out/$dmg" "/tmp/$dmg"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout -f -B main origin/main
-          cp "/tmp/$dmg" "dist-packages/$dmg"
-          sum=$(shasum -a 256 "dist-packages/$dmg" | awk '{print $1}')
-          { grep -v "  ${dmg}\$" dist-packages/SHA256SUMS || true; echo "${sum}  ${dmg}"; } > /tmp/SHA256SUMS
-          mv /tmp/SHA256SUMS dist-packages/SHA256SUMS
-          python3 - "$version" "$sum" <<'PY'
-          import json, sys, datetime
-          version, sha = sys.argv[1], sys.argv[2]
-          data = json.load(open('version.json', encoding='utf-8'))
-          mac = {
-              "version": version,
-              "release_date": datetime.date.today().isoformat(),
-              "dmg_url": f"https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_{version}_universal.dmg",
-              "sha256": sha,
-          }
-          out = {}
-          for k, v in data.items():
-              out[k] = mac if k == "macos_installer" else v
-              if k == "windows_installer" and "macos_installer" not in data:
-                  out["macos_installer"] = mac
-          if "macos_installer" not in out:
-              out["macos_installer"] = mac
-          json.dump(out, open('version.json', 'w', encoding='utf-8'), indent=2, ensure_ascii=False)
-          open('version.json', 'a').write("\n")
-          PY
-          git add "dist-packages/$dmg" dist-packages/SHA256SUMS version.json
-          git commit -m "release: macOS universal .dmg ${version}"
-          git push origin HEAD:main
