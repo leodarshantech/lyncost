@@ -11,6 +11,12 @@
     "msi_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.10_x64_en-US.msi",
     "sha256": "9afa34ee8a436357eabbdd7d25401c7ec37eafdaa904492de6b76b34db5a530e"
   },
+  "macos_installer": {
+    "version": "0.1.10",
+    "release_date": "2026-10-02",
+    "dmg_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.10_universal.dmg",
+    "sha256": "3b8b8a1d912a6ed3d39be411329c6d994d426545d897453add1077efc6a33695"
+  },
   "mobile_beta": {
     "version": "0.2.1",
     "release_date": "2026-09-13",
