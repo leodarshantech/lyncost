@@ -42,6 +42,7 @@ dist-packages/*
 !dist-packages/*.exe
 !dist-packages/*.msi
 !dist-packages/*.zip
+!dist-packages/*.dmg
 !dist-packages/SHA256SUMS
 packaging/*_staging/
 packaging/deb_build/
