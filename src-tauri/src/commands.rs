@@ -5782,8 +5782,8 @@ mod tests {
         assert!(!is_version_greater("0.1.8", "0.1.9"));
     }
 
-    /// Release check against the LIVE published files (network): the Linux tarball and the
-    /// Windows setup.exe named in version.json must download and match SHA256SUMS exactly as
+    /// Release check against the LIVE published files (network): the Linux tarball, the
+    /// Windows setup.exe and the macOS .dmg named in version.json must download and match SHA256SUMS exactly as
     /// the in-app updaters will. Run after publishing: cargo test live_release -- --ignored
     #[test]
     #[ignore]
@@ -5793,6 +5793,7 @@ mod tests {
         for (url, suffix) in [
             (val["tarball_url"].as_str().unwrap(), ".tar.gz"),
             (val["windows_installer"]["setup_exe_url"].as_str().unwrap(), "_x64-setup.exe"),
+            (val["macos_installer"]["dmg_url"].as_str().unwrap(), "_universal.dmg"),
         ] {
             assert!(is_trusted_update_url(url), "untrusted {}", url);
             let name = url.rsplit('/').next().unwrap();
