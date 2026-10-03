@@ -5041,8 +5041,7 @@ fn find_checksum(sums: &str, file_name: &str) -> Option<String> {
 }
 
 /// Where to look for updates on this platform, from version.json:
-/// Linux installs the tarball in-app; Windows downloads and runs the NSIS setup.exe;
-/// macOS downloads the universal .dmg and opens it.
+/// Linux installs the tarball in-app; Windows downloads and runs the NSIS setup.exe.
 fn update_target(val: &serde_json::Value) -> Option<(String, String, &'static str)> {
     if cfg!(target_os = "linux") {
         let latest = val["version"].as_str()?.to_string();
@@ -5056,11 +5055,6 @@ fn update_target(val: &serde_json::Value) -> Option<(String, String, &'static st
         let win = &val["windows_installer"];
         let latest = win["version"].as_str().or_else(|| val["version"].as_str())?.to_string();
         let url = win["setup_exe_url"].as_str()?.to_string();
-        Some((latest, url, "installer"))
-    } else if cfg!(target_os = "macos") {
-        let mac = &val["macos_installer"];
-        let latest = mac["version"].as_str().or_else(|| val["version"].as_str())?.to_string();
-        let url = mac["dmg_url"].as_str()?.to_string();
         Some((latest, url, "installer"))
     } else {
         None
@@ -5080,7 +5074,7 @@ pub fn check_app_update() -> Result<AppUpdateInfo, String> {
         install_mode: "none".to_string(),
     };
 
-    if !cfg!(target_os = "linux") && !cfg!(target_os = "windows") && !cfg!(target_os = "macos") {
+    if !cfg!(target_os = "linux") && !cfg!(target_os = "windows") {
         return Ok(no_update(current_version));
     }
 
@@ -5121,7 +5115,7 @@ pub fn check_app_update() -> Result<AppUpdateInfo, String> {
 }
 
 /// Downloads `url` and its SHA256SUMS from the same folder, and returns the package bytes
-/// only if the checksum matches. Shared by the Linux, Windows and macOS updaters.
+/// only if the checksum matches. Shared by the Linux and Windows updaters.
 fn download_verified(url: &str, file_name: &str, max_time_secs: &str) -> Result<Vec<u8>, String> {
     let sums_url = format!("{}SHA256SUMS", &url[..url.len() - file_name.len()]);
     let package = run_curl(&["--max-time", max_time_secs, url])?;
@@ -5168,45 +5162,6 @@ fn install_windows_update(app: &AppHandle, url: &str) -> Result<String, String> 
     Ok("The installer is starting. Lyncost will close so it can update.".to_string())
 }
 
-/// macOS: download the new universal .dmg, verify it, open it (Finder shows the usual "drag
-/// Lyncost to Applications" window), then close Lyncost so the old app can be replaced.
-/// Data (~/Library/Application Support) and the license are untouched. Files fetched with
-/// curl carry no quarantine flag, so this update path does not trigger the Gatekeeper prompt.
-fn install_macos_update(app: &AppHandle, url: &str) -> Result<String, String> {
-    let file_name = url
-        .rsplit('/')
-        .next()
-        .filter(|n| n.starts_with("Lyncost_") && n.ends_with("_universal.dmg") && !n.contains(['\\', ':']))
-        .ok_or_else(|| "Update URL does not point to a Lyncost .dmg".to_string())?
-        .to_string();
-
-    let package = download_verified(url, &file_name, "600")?;
-
-    // Private per-run folder in the user's own temp directory
-    let dir = std::env::temp_dir().join(format!("lyncost-update-{}-{}", std::process::id(), now_unix()));
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create update folder: {}", e))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
-    }
-    let dmg = dir.join(&file_name);
-    fs::write(&dmg, &package).map_err(|e| format!("Failed to save the update: {}", e))?;
-
-    std::process::Command::new("open")
-        .arg(&dmg)
-        .spawn()
-        .map_err(|e| format!("Could not open the update: {}", e))?;
-
-    let handle = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(1500));
-        handle.exit(0);
-    });
-
-    Ok("The update is opening. Drag Lyncost into Applications and choose Replace.".to_string())
-}
-
 #[tauri::command(async)]
 pub fn install_app_update(app: AppHandle, download_url: Option<String>) -> Result<String, String> {
     let url = download_url.ok_or_else(|| "No update package URL provided".to_string())?;
@@ -5216,9 +5171,6 @@ pub fn install_app_update(app: AppHandle, download_url: Option<String>) -> Resul
 
     if cfg!(target_os = "windows") {
         return install_windows_update(&app, &url);
-    }
-    if cfg!(target_os = "macos") {
-        return install_macos_update(&app, &url);
     }
     if !cfg!(target_os = "linux") {
         return Err("Updates for this platform are not available yet. Please download the latest version from the website.".to_string());
@@ -5726,10 +5678,6 @@ mod tests {
             "windows_installer": {
                 "version": "0.1.9",
                 "setup_exe_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.9_x64-setup.exe"
-            },
-            "macos_installer": {
-                "version": "0.1.9",
-                "dmg_url": "https://raw.githubusercontent.com/leodarshantech/lyncost/main/dist-packages/Lyncost_0.1.9_universal.dmg"
             }
         })
     }
@@ -5749,12 +5697,6 @@ mod tests {
             assert_eq!(ver, "0.1.9");
             assert!(url.ends_with("Lyncost_0.1.9_x64-setup.exe"));
             assert_eq!(mode, "installer");
-        } else if cfg!(target_os = "macos") {
-            // macOS follows its own .dmg version too
-            let (ver, url, mode) = target.expect("macos target");
-            assert_eq!(ver, "0.1.9");
-            assert!(url.ends_with("Lyncost_0.1.9_universal.dmg"));
-            assert_eq!(mode, "installer");
         } else {
             assert!(target.is_none());
         }
@@ -5766,8 +5708,6 @@ mod tests {
         let target = update_target(&v);
         if cfg!(target_os = "windows") {
             assert!(target.is_none(), "no setup_exe_url means no Windows update, not a crash");
-        } else if cfg!(target_os = "macos") {
-            assert!(target.is_none(), "no dmg_url means no macOS update, not a crash");
         } else if cfg!(target_os = "linux") {
             // falls back to the conventional tarball name
             assert!(target.unwrap().1.ends_with("lyncost-0.2.0-linux-x86_64.tar.gz"));
@@ -5782,8 +5722,8 @@ mod tests {
         assert!(!is_version_greater("0.1.8", "0.1.9"));
     }
 
-    /// Release check against the LIVE published files (network): the Linux tarball, the
-    /// Windows setup.exe and the macOS .dmg named in version.json must download and match SHA256SUMS exactly as
+    /// Release check against the LIVE published files (network): the Linux tarball and the
+    /// Windows setup.exe named in version.json must download and match SHA256SUMS exactly as
     /// the in-app updaters will. Run after publishing: cargo test live_release -- --ignored
     #[test]
     #[ignore]
@@ -5793,7 +5733,6 @@ mod tests {
         for (url, suffix) in [
             (val["tarball_url"].as_str().unwrap(), ".tar.gz"),
             (val["windows_installer"]["setup_exe_url"].as_str().unwrap(), "_x64-setup.exe"),
-            (val["macos_installer"]["dmg_url"].as_str().unwrap(), "_universal.dmg"),
         ] {
             assert!(is_trusted_update_url(url), "untrusted {}", url);
             let name = url.rsplit('/').next().unwrap();

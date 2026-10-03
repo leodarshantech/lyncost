@@ -605,7 +605,7 @@ export const SettingsPage: React.FC = () => {
             <p className={`text-xs max-w-xl leading-relaxed font-bold ${
               theme === 'light' ? 'text-slate-800' : 'text-zinc-100'
             }`}>
-              Lyncost is 100% offline, private desktop software. Zero tracking, zero telemetry.
+              Lyncost is free, 100% offline, and private desktop software built for Linux users worldwide. Zero tracking, zero telemetry.
             </p>
           </div>
         </div>
@@ -621,7 +621,7 @@ export const SettingsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Lifetime License & Key Recovery Card (Windows and macOS) */}
+      {/* Windows Lifetime License & Key Recovery Card */}
       {savedLicenseKey && (
         <div className={`p-5 rounded-2xl border shadow-lg space-y-3 transition-all ${
           theme === 'light'
@@ -635,7 +635,7 @@ export const SettingsPage: React.FC = () => {
                 <h3 className={`text-sm font-black tracking-tight ${
                   theme === 'light' ? 'text-slate-950' : 'text-white'
                 }`}>
-                  Lifetime License
+                  Windows Lifetime License
                 </h3>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                   theme === 'light'
@@ -1273,7 +1273,7 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Desktop Notifications & Bill Reminders */}
+        {/* Linux Desktop Notifications & Bill Reminders */}
         <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-white">
@@ -1294,7 +1294,7 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <p className="text-xs text-zinc-400 leading-relaxed">
-            Receive native system notifications for unpaid bills due today or coming up soon, with automatic daily checks on application startup.
+            Receive native Linux system notifications for unpaid bills due today or coming up soon, with automatic daily checks on application startup.
           </p>
 
           {notifyMessage && (
@@ -1331,7 +1331,7 @@ export const SettingsPage: React.FC = () => {
                 />
                 <div>
                   <span className="text-xs font-semibold text-zinc-200 block">
-                    Enable Desktop Alerts
+                    Enable Linux Desktop Alerts
                   </span>
                   <span className="text-[11px] text-zinc-500 block">
                     Trigger system tray popups for upcoming and overdue bills via notify-send.

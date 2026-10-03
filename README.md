@@ -55,20 +55,6 @@ curl -fsSL https://raw.githubusercontent.com/leodarshantech/lyncost/main/install
 - **Desktop Integrated**: Adds high-res icon and application launcher shortcut to your app menu.
 - **Zero Dependencies**: Fully compiled standalone binary with SQLite embedded.
 
-### 🍎 macOS (Intel & Apple Silicon)
-
-Download `Lyncost_<version>_universal.dmg` from the website, open it, and drag **Lyncost** into **Applications**. One build runs natively on both Intel and Apple Silicon Macs (macOS 10.15 Catalina or newer).
-
-Like Windows, the macOS edition includes a **14-day free trial**; after that a lifetime license key unlocks it (your data is never deleted). Your data lives in `~/Library/Application Support/com.lyncost.desktop`.
-
-**First launch (the app is not notarized by Apple):** macOS shows *"Lyncost can't be opened because Apple cannot check it for malicious software"*. This is expected for apps from independent developers. To open it once:
-
-1. In **Applications**, **right-click Lyncost → Open → Open**. (If there is no *Open* button, continue with step 2.)
-2. Or go to **System Settings → Privacy & Security**, scroll down to *"Lyncost was blocked"* and click **Open Anyway**.
-3. Or run this in Terminal once: `xattr -dr com.apple.quarantine /Applications/Lyncost.app`
-
-After that it opens normally. Updates installed from inside Lyncost never show this prompt.
-
 ### 📱 Lyncost Mobile for Android (Public Beta)
 
 Download the native Android APK directly to test the offline mobile companion:
@@ -170,7 +156,6 @@ The compiled binary will be placed at `~/.local/bin/lyncost` and `src-tauri/targ
 ### Prerequisites
 - Node.js 18+ and npm
 - Rust 1.77+ and Cargo
-- **macOS**: Xcode Command Line Tools (`xcode-select --install`); then `npx tauri build` produces the `.app` and `.dmg`. Official universal releases are built by `.github/workflows/build-macos.yml`.
 - Linux development libraries:
   - **Arch Linux**: `sudo pacman -S webkit2gtk-4.1 gtk3 base-devel openssl`
   - **Debian / Ubuntu**: `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev build-essential libssl-dev`

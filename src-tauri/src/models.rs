@@ -772,7 +772,7 @@ pub struct AppUpdateInfo {
     pub release_notes: String,
     pub published_at: String,
     pub download_url: String,
-    /// "in_app" (Linux: installs itself), "installer" (Windows: runs the new setup.exe, macOS: opens the new .dmg), "none"
+    /// "in_app" (Linux: installs itself), "installer" (Windows: runs the new setup.exe), "none"
     pub install_mode: String,
 }
 

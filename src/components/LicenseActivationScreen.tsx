@@ -96,7 +96,7 @@ export const LicenseActivationScreen: React.FC<LicenseActivationScreenProps> = (
         <div className="space-y-1.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800/80 border border-zinc-700/80 text-[11px] font-mono text-zinc-300">
             <Laptop className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{/Macintosh|Mac OS X/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '') ? 'macOS' : 'Windows'} Edition • Lifetime License</span>
+            <span>Windows Edition • Lifetime License</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
             {isSuccess ? 'Activation Successful!' : trialExpired ? 'Your free trial has ended' : 'Activate Lyncost'}
